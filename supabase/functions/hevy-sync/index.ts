@@ -30,6 +30,7 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
+import { chunk } from '../_shared/chunk.ts'
 
 const HEVY_BASE = 'https://api.hevyapp.com/v1'
 
@@ -181,12 +182,6 @@ async function fetchAllWorkouts(apiKey: string): Promise<HevyWorkout[]> {
     if (workouts.length < pageSize) break
   }
   return all
-}
-
-function chunk<T>(items: T[], size: number): T[][] {
-  const out: T[][] = []
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
-  return out
 }
 
 /**

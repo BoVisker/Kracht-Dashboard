@@ -2,7 +2,7 @@
 
 Personal sport performance & goal management system — strength training (Hevy), cardio (Strava), Cluster 6 (Korps Mariniers) readiness, and a generic goal engine, in one dashboard. See [ARCHITECTURE.md](ARCHITECTURE.md) for how the pieces fit together and why.
 
-**Status: Phase 2 (Hevy live wiring) complete.** Phase 1's foundation plus: Supabase Auth (single-user login/logout), a Settings form to save your Hevy API key server-side, and a working Sync page that calls the real `hevy-sync` Edge Function and shows real `integrations` status. None of this has been tested against a real Supabase project yet — only verified to degrade gracefully with fake/absent config. Strava OAuth, the goal engine's live data wiring, training-plan analysis, and the rest of the roadmap below are not built yet.
+**Status: Phase 3 (Strava OAuth + sync) built, pending your Strava app credentials to go live.** Phases 1-2 are live and verified end-to-end against a real Supabase project: auth, Hevy sync (idempotent, batched, ~3-4s for 160 workouts / 3200+ sets), and goal `current_value` computed automatically from synced sets after every sync. Strava's OAuth flow, token refresh, and cardio sync are built the same way but need your Strava API app's Client ID/Secret to actually run — see "Strava" below. Training-plan analysis, Cluster 6 data entry, and the rest of the roadmap are not built yet.
 
 ## Stack
 
@@ -25,6 +25,8 @@ These are the steps only you can do — Claude cannot create accounts, register 
    supabase db push          # applies supabase/migrations/0001_init.sql
    supabase functions deploy hevy-sync
    supabase functions deploy save-provider-token
+   supabase functions deploy strava-exchange-token
+   supabase functions deploy strava-sync
    ```
 4. Set the Edge Function secrets (these are Supabase secrets, not GitHub secrets):
    ```bash
@@ -56,9 +58,20 @@ npm run dev
 2. Repo **Settings → Secrets and variables → Actions → Variables tab** — add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (Repository variables, not secrets — see [ARCHITECTURE.md](ARCHITECTURE.md#9-how-are-secrets-managed) for why that's fine).
 3. Push to `main`. [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) lints, typechecks, tests, builds, and deploys — in that order, and only on green.
 
-### 5. Strava (not yet built)
+### 5. Strava
 
-The adapter and `cardio_sessions` schema exist; the OAuth callback and webhook Edge Functions don't yet. When that phase lands, you'll need to register an app at [developers.strava.com](https://developers.strava.com) yourself and store the client ID/secret as Supabase secrets, the same way as Hevy's key.
+1. Create an API app at [strava.com/settings/api](https://www.strava.com/settings/api).
+2. Set **Authorization Callback Domain** to your GitHub Pages domain only — no `https://`, no path. For the default project URL that's `bovisker.github.io`; if you ever add a custom domain, update this to match.
+3. Note the **Client ID** (public) and **Client Secret** (not public).
+4. Set the secret server-side:
+   ```bash
+   supabase secrets set STRAVA_CLIENT_ID=<client-id>
+   supabase secrets set STRAVA_CLIENT_SECRET=<client-secret>
+   ```
+5. Add `VITE_STRAVA_CLIENT_ID=<client-id>` to `.env.local` for local dev, and as a GitHub repo Variable (same place as the Supabase ones) for production.
+6. On the Sync page, click "Connect Strava" — it redirects to Strava, then back to the app, which exchanges the code for tokens via `strava-exchange-token` and stores them the same way Hevy's key is stored (server-side only, `provider_tokens` table with no client-readable RLS policy).
+
+Not implemented: Strava webhooks (brief section 7) — sync is polling-only for now, same as Hevy. Calories aren't available from the activity-list endpoint Strava uses here, so `cardio_sessions.calories` stays null rather than showing a fabricated number.
 
 ## Scripts
 
@@ -72,10 +85,13 @@ The adapter and `cardio_sessions` schema exist; the OAuth callback and webhook E
 
 ## Roadmap
 
-Foundation (phase 1) is done. Remaining phases, roughly in order: Strava integration, canonical training/cardio data wiring end-to-end, strength analytics, goal engine UI, Cluster 6 readiness data entry, recovery analytics, per-session training analysis, weekly/monthly reports, achievements + celebrations, forecasting, Garmin adapter (if Garmin ever opens individual access), then testing/perf/security polish.
+Phases 1-2 done and live-verified. Phase 3 (Strava) is built pending your app credentials. Remaining, roughly in order: wire Training/Cardio/Exercise pages to the real synced data (they're currently honest placeholders even though the data exists), strength analytics (e1RM/PR/volume per exercise, generalizing what `recomputeGoalProgress` does for goals specifically), full goal engine UI (trend/forecast, editable in Settings), Cluster 6 readiness data entry, recovery analytics, per-session training analysis, weekly/monthly reports, achievements + celebrations, forecasting, Garmin adapter (if Garmin ever opens individual access), Strava webhooks, then testing/perf/security polish.
 
 ## Known gaps / honesty notes
 
 - Cluster 6 requirement numbers (`src/lib/cluster6/requirements.ts`) are sourced from a third-party site (fitvoordefensie.nl), not werkenbijdefensie.nl directly (that page 404'd during research) — verify before relying on them for anything that matters.
 - The Hevy `/v1/workouts/events` incremental-sync endpoint's exact response shape wasn't directly observable (Hevy's Swagger UI doesn't serve to non-browser fetchers) — `hevy-sync` currently does a full refresh each run, which is correct but not incremental. See the comment in `supabase/functions/hevy-sync/index.ts`.
-- No Settings UI yet to actually paste a Hevy key or edit goals/cluster requirements — those pages currently say so rather than pretending to work.
+- No Settings UI yet to edit goals/cluster requirements — those pages currently say so rather than pretending to work. The Hevy key form does work (Settings → Hevy).
+- Strava webhooks aren't implemented — sync is polling-only (click "Sync now"), same scope boundary as Hevy.
+- `recomputeGoalProgress` (in `hevy-sync`) only updates `current_value`; it doesn't compute `forecast_date` or a trend-based status yet — goals show real current/target numbers but the status badge stays conservative until that lands.
+- Training/Cardio/Exercise-detail pages don't query real data yet even though `training_sessions`/`sets`/`cardio_sessions` are populated — that wiring is a specific, separate next step, not implied by "sync works".

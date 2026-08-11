@@ -8,6 +8,7 @@ import type { FitnessDataProvider, ProviderAvailability } from '../lib/providers
 import { isSupabaseConfigured } from '../lib/supabase'
 import { useIntegrationStatus, useInvalidateIntegrations, type IntegrationRow } from '../hooks/useIntegrationStatus'
 import { triggerSync } from '../lib/providers/api'
+import { buildStravaAuthorizeUrl, isStravaConfigured } from '../lib/providers/stravaOAuth'
 
 const AVAILABILITY_LABEL: Record<ProviderAvailability, string> = {
   connected: 'Connected',
@@ -22,6 +23,9 @@ const AVAILABILITY_TONE: Record<ProviderAvailability, BadgeTone> = {
   error: 'crit',
   unavailable: 'warn',
 }
+
+/** Providers with a real, deployed sync function today. Garmin has none (see lib/providers/garmin.ts). */
+const SYNCABLE_PROVIDERS = new Set(['hevy', 'strava'])
 
 function formatSyncTime(iso: string | null): string {
   if (!iso) return 'nooit'
@@ -38,15 +42,16 @@ export function SyncPage() {
   const rowFor = (id: string): IntegrationRow | undefined => rows?.find((r) => r.provider === id)
 
   async function handleSync(provider: FitnessDataProvider) {
-    if (provider.id !== 'hevy') return // only Hevy has a real sync function today
+    if (!SYNCABLE_PROVIDERS.has(provider.id)) return
     setSyncing(provider.id)
     setSyncMessage(null)
-    const result = await triggerSync('hevy')
+    const result = await triggerSync(provider.id as 'hevy' | 'strava')
     setSyncing(null)
     if (result.error) {
       setSyncMessage(`Fout: ${result.error}`)
     } else {
-      setSyncMessage(`${result.upserted ?? 0} sets bijgewerkt uit ${result.fetched ?? 0} workouts.`)
+      const noun = provider.id === 'hevy' ? 'sets' : 'cardio-sessies'
+      setSyncMessage(`${result.upserted ?? 0} ${noun} bijgewerkt uit ${result.fetched ?? 0} ${provider.id === 'hevy' ? 'workouts' : 'activiteiten'}.`)
     }
     invalidateIntegrations()
   }
@@ -68,8 +73,13 @@ export function SyncPage() {
           const row = rowFor(provider.id)
           const fallbackStatus = provider.status()
           const availability = row?.status ?? fallbackStatus.availability
-          const detail = row?.last_error ?? fallbackStatus.detail
-          const canSync = provider.id === 'hevy' && availability === 'connected'
+          const connected = availability === 'connected'
+          // row.last_error is legitimately null once connected (nothing went
+          // wrong) -- falling back to the generic "not connected" copy in
+          // that case was misleading, since the account IS connected.
+          const detail = connected ? `Verbonden. Klik "Sync now" om de laatste data op te halen.` : (row?.last_error ?? fallbackStatus.detail)
+          const canSync = SYNCABLE_PROVIDERS.has(provider.id) && connected
+          const showConnectStrava = provider.id === 'strava' && !connected && isSupabaseConfigured()
 
           return (
             <Card key={provider.id} title={provider.label}>
@@ -98,14 +108,28 @@ export function SyncPage() {
                   <dd>{provider.capabilities.incrementalSync ? 'ja' : 'nee'}</dd>
                 </div>
               </dl>
-              <button
-                type="button"
-                disabled={!canSync || syncing === provider.id}
-                onClick={() => handleSync(provider)}
-                className="mt-4 min-h-11 w-full rounded-md border border-border px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {syncing === provider.id ? 'Bezig…' : 'Sync now'}
-              </button>
+
+              {showConnectStrava ? (
+                isStravaConfigured() ? (
+                  <a
+                    href={buildStravaAuthorizeUrl()}
+                    className="mt-4 flex min-h-11 w-full items-center justify-center rounded-md bg-series-1 px-3 py-2 text-sm font-semibold text-white"
+                  >
+                    Connect Strava
+                  </a>
+                ) : (
+                  <p className="mt-4 text-xs text-text-muted">VITE_STRAVA_CLIENT_ID ontbreekt — zie README.md "Strava" setup.</p>
+                )
+              ) : (
+                <button
+                  type="button"
+                  disabled={!canSync || syncing === provider.id}
+                  onClick={() => handleSync(provider)}
+                  className="mt-4 min-h-11 w-full rounded-md border border-border px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {syncing === provider.id ? 'Bezig…' : 'Sync now'}
+                </button>
+              )}
             </Card>
           )
         })}

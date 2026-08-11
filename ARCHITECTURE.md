@@ -25,7 +25,7 @@ Same table, same rule, for Hevy's static `api-key`. Supabase project secrets (`s
 ## 6. How do Hevy and Strava sync?
 
 - **Hevy**: polling only — Hevy has no webhooks. `hevy-sync` fetches `/v1/workouts` (paginated) and upserts into canonical tables keyed on `(user_id, source, external_id)`, making re-runs idempotent. The user (or a future scheduled trigger) calls "Sync now" on the Sync page.
-- **Strava**: OAuth2 (authorization-code flow, client secret stays server-side) plus real webhooks. Not yet implemented in this phase — `strava-oauth-callback` and `strava-webhook` Edge Functions are the next slice; the adapter interface and DB schema (`cardio_sessions`) are already in place for them.
+- **Strava**: OAuth2 authorization-code flow. The frontend builds the authorize URL with the public client ID and redirects to Strava; Strava redirects back to the app's own root URL with `?code=...`; `StravaCallbackHandler` (mounted in `AppShell`) picks that up and calls `strava-exchange-token`, which does the actual code-for-token exchange server-side (client secret never leaves Supabase) and stores tokens in `provider_tokens`. `strava-sync` refreshes the access token on demand (5-minute-early buffer) and fetches `/athlete/activities`, batch-upserting into `cardio_sessions`. Real Strava webhooks (brief section 7) are not implemented — sync is polling-only via "Sync now", the same scope boundary as Hevy.
 - **Garmin**: no integration. Garmin Connect Developer Program is enterprise/partner-only; there is no self-serve path for an individual. The `FitnessDataProvider` adapter exists as a slot (`src/lib/providers/garmin.ts`), deliberately unimplemented.
 
 ## 7. How does new data reach the dashboard?
@@ -41,9 +41,11 @@ Supabase migrations and Edge Functions are deployed via the Supabase CLI (`supab
 | Secret | Lives in | Who can read it |
 |---|---|---|
 | Hevy API key | `provider_tokens` table | `service_role` only (Edge Functions) |
-| Strava client secret | Supabase project secret | Edge Functions only |
+| Strava access/refresh tokens | `provider_tokens` table | `service_role` only (Edge Functions) |
+| Strava client secret | Supabase project secret (`STRAVA_CLIENT_SECRET`) | Edge Functions only |
 | Supabase `service_role` key | Supabase project secret (Edge Function env) | Edge Functions only |
 | Supabase URL + anon key | `VITE_*` build vars / GitHub repo Variables | Public — safe by design, gated by RLS |
+| Strava client ID | `VITE_STRAVA_CLIENT_ID` build var / GitHub repo Variable | Public — required in the browser for the OAuth authorize redirect |
 
 ## 10. How is this tested locally vs in production?
 

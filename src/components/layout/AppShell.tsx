@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../../lib/auth/useAuth'
+import { StravaCallbackHandler } from '../StravaCallbackHandler'
 
 const NAV_ITEMS = [
   { to: '/', label: 'Command Center', end: true },
@@ -52,6 +53,7 @@ export function AppShell() {
         </nav>
       </header>
       <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
+        <StravaCallbackHandler />
         <Outlet />
       </main>
     </div>
