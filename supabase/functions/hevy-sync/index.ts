@@ -124,6 +124,7 @@ Deno.serve(async (req) => {
       const workouts = await fetchAllWorkouts(hevyApiKey)
       fetched = workouts.length
       upserted = await upsertAllWorkouts(admin, userId, workouts)
+      await recomputeGoalProgress(admin, userId)
 
       await admin
         .from('integrations')
@@ -300,6 +301,67 @@ async function upsertAllWorkouts(admin: AdminClient, userId: string, workouts: H
   }
 
   return inserted
+}
+
+/**
+ * For every one of the user's goals linked to an exercise (goals.exercise_id),
+ * recomputes current_value from the sets actually on record: estimated 1RM
+ * (Epley) of the best set in the most recent session that touched that
+ * exercise. Generic across any exercise-linked goal, not hardcoded to
+ * bench/dips/pull-ups -- goals with no linked exercise are left untouched,
+ * and a goal whose exercise has no sets yet keeps current_value at null
+ * rather than getting a fabricated number.
+ */
+async function recomputeGoalProgress(admin: AdminClient, userId: string): Promise<void> {
+  const { data: goals, error: goalsError } = await admin
+    .from('goals')
+    .select('id, exercise_id')
+    .eq('user_id', userId)
+    .not('exercise_id', 'is', null)
+  if (goalsError || !goals?.length) return
+
+  const { data: sessions, error: sessionsError } = await admin
+    .from('training_sessions')
+    .select('id, date')
+    .eq('user_id', userId)
+  if (sessionsError || !sessions?.length) return
+  const sessionDateById = new Map((sessions as { id: string; date: string }[]).map((s) => [s.id, s.date]))
+  const sessionIds = Array.from(sessionDateById.keys())
+
+  for (const goal of goals as { id: string; exercise_id: string }[]) {
+    const { data: setsForExercise, error: setsError } = await admin
+      .from('sets')
+      .select('session_id, weight_kg, reps')
+      .eq('exercise_id', goal.exercise_id)
+      .in('session_id', sessionIds)
+    if (setsError || !setsForExercise?.length) continue
+
+    // Best (highest estimated 1RM) set per session...
+    const bestPerSession = new Map<string, number>()
+    for (const s of setsForExercise as { session_id: string; weight_kg: number | null; reps: number | null }[]) {
+      if (s.reps == null || s.reps <= 0) continue
+      const weight = s.weight_kg ?? 0
+      const e1rm = weight * (1 + s.reps / 30) // Epley -- matches src/lib/strength/estimate1RM.ts
+      if (e1rm > (bestPerSession.get(s.session_id) ?? -Infinity)) bestPerSession.set(s.session_id, e1rm)
+    }
+
+    // ...then the most recent session among those wins as "current".
+    let latestDate = ''
+    let latestE1rm: number | null = null
+    for (const [sessionId, e1rm] of bestPerSession) {
+      const date = sessionDateById.get(sessionId) ?? ''
+      if (date > latestDate) {
+        latestDate = date
+        latestE1rm = e1rm
+      }
+    }
+    if (latestE1rm == null) continue
+
+    await admin
+      .from('goals')
+      .update({ current_value: Math.round(latestE1rm * 10) / 10, updated_at: new Date().toISOString() })
+      .eq('id', goal.id)
+  }
 }
 
 function json(body: unknown, status = 200): Response {
