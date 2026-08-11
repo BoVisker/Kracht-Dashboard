@@ -1,0 +1,23 @@
+import { Card } from '../components/ui/Card'
+
+export function SettingsPage() {
+  return (
+    <div>
+      <h2 className="mb-4 text-lg font-semibold">Settings</h2>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <Card title="Doelen" subtitle="Deadlines, targets en prioriteit per doel bewerken.">
+          <p className="text-sm text-text-muted">Nog te bouwen — komt met de Goal Engine (fase 6).</p>
+        </Card>
+        <Card title="Trainingsplan" subtitle="Push/Pull/Legs-schema en heavy/volume-indeling.">
+          <p className="text-sm text-text-muted">Nog te bouwen — komt met Trainingsplan-analyse (fase 9).</p>
+        </Card>
+        <Card title="Cluster 6 configuratie" subtitle="Buffer-marges en vereisten bewerken zonder redeploy.">
+          <p className="text-sm text-text-muted">Nog te bouwen — komt met Cluster 6 readiness (fase 7).</p>
+        </Card>
+        <Card title="Units & privacy" subtitle="kg/lbs, km/mi, data-export en verwijderen.">
+          <p className="text-sm text-text-muted">Nog te bouwen.</p>
+        </Card>
+      </div>
+    </div>
+  )
+}

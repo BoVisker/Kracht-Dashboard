@@ -1,0 +1,76 @@
+import type { Goal } from '../lib/types/canonical'
+import { Badge, type BadgeTone } from './ui/Badge'
+import { ProgressBar } from './ui/ProgressBar'
+import { isDeadlineExpired } from '../lib/goals/goalEngine'
+
+const STATUS_LABEL: Record<Goal['status'], string> = {
+  on_track: 'Op schema',
+  at_risk: 'Risico',
+  behind: 'Achter',
+  insufficient_data: 'Onvoldoende data',
+  achieved: 'Behaald',
+  expired: 'Deadline verlopen',
+}
+
+const STATUS_TONE: Record<Goal['status'], BadgeTone> = {
+  on_track: 'good',
+  at_risk: 'warn',
+  behind: 'crit',
+  insufficient_data: 'neutral',
+  achieved: 'good',
+  expired: 'crit',
+}
+
+function formatValue(value: number | null, unit: string): string {
+  if (value == null) return '–'
+  return `${value % 1 === 0 ? value : value.toFixed(1)} ${unit}`
+}
+
+function formatDate(iso: string | null): string {
+  if (!iso) return '–'
+  return new Date(iso).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
+/** Layout follows brief section 48's mock exactly: current → target, bar, remaining, deadline, status, forecast. */
+export function GoalCard({ goal, percent }: { goal: Goal; percent: number | null }) {
+  const expired = isDeadlineExpired(goal.deadline)
+  const remaining = goal.currentValue == null ? null : goal.targetValue - goal.currentValue
+
+  return (
+    <div className="rounded-xl border border-border bg-card-bg p-5">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <h3 className="text-sm font-semibold tracking-wide text-text-secondary uppercase">{goal.name}</h3>
+        <Badge tone={STATUS_TONE[goal.status]}>{STATUS_LABEL[goal.status]}</Badge>
+      </div>
+
+      <div className="mb-3 flex items-baseline gap-2">
+        <span className="text-2xl font-semibold text-text-primary">{formatValue(goal.currentValue, goal.unit)}</span>
+        <span className="text-text-muted">→</span>
+        <span className="text-2xl font-semibold text-text-primary">{formatValue(goal.targetValue, goal.unit)}</span>
+      </div>
+
+      <ProgressBar percent={percent} />
+      <div className="mt-1.5 flex items-center justify-between text-xs text-text-secondary">
+        <span>{percent == null ? 'Onvoldoende data voor percentage' : `${Math.round(percent)}%`}</span>
+        <span>{remaining != null && remaining > 0 ? `+${remaining % 1 === 0 ? remaining : remaining.toFixed(1)} ${goal.unit} te gaan` : null}</span>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+        <div>
+          <div className="text-xs text-text-muted">Deadline</div>
+          <div className={expired ? 'font-medium text-status-crit' : 'text-text-primary'}>{formatDate(goal.deadline)}</div>
+        </div>
+        <div>
+          <div className="text-xs text-text-muted">Forecast</div>
+          <div className="text-text-primary">{goal.forecastDate ? formatDate(goal.forecastDate) : 'Insufficient data'}</div>
+        </div>
+      </div>
+
+      {expired && goal.status !== 'achieved' && (
+        <div className="mt-3 rounded-md border border-status-crit/30 bg-status-crit/10 px-3 py-2 text-xs text-text-primary">
+          Deadline expired — confirmation required. Pas de deadline aan in Doelen-instellingen, deze wordt niet automatisch gewijzigd.
+        </div>
+      )}
+    </div>
+  )
+}

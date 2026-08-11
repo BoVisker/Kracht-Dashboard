@@ -1,0 +1,121 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens carried over from the original dashboard.html prototype,
+ * which already had a working accessible dark/light system (4.5:1 text
+ * contrast, color never carried by text alone — always dot + ink text).
+ * `data-theme` lets a future in-app toggle override the OS preference;
+ * the media query is the default when no override is set.
+ */
+:root {
+  color-scheme: light;
+  --surface-1: #fcfcfb;
+  --page-plane: #f9f9f7;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #787671;
+  --gridline: #e1e0d9;
+  --baseline: #c3c2b7;
+  --line-muted: #96958d;
+  --border: rgba(11, 11, 11, 0.1);
+  --series-1: #2a78d6;
+  --series-2: #d68f2a;
+  --series-1-wash: rgba(42, 120, 214, 0.12);
+  --accent-text: #276fc6;
+  --status-good: #0ca30c;
+  --status-warn: #fab219;
+  --status-crit: #d03b3b;
+  --card-bg: #ffffff;
+  --tip-bg: #eef3fb;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page-plane: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #8c8a84;
+    --gridline: #2c2c2a;
+    --baseline: #383835;
+    --line-muted: #6d6d67;
+    --border: rgba(255, 255, 255, 0.1);
+    --series-1: #3987e5;
+    --series-2: #e5a339;
+    --series-1-wash: rgba(57, 135, 229, 0.16);
+    --accent-text: #3b8bec;
+    --status-good: #2fbf3f;
+    --status-warn: #fab219;
+    --status-crit: #e66767;
+    --card-bg: #1c1c1b;
+    --tip-bg: #17233a;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --surface-1: #1a1a19;
+  --page-plane: #0d0d0d;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #8c8a84;
+  --gridline: #2c2c2a;
+  --baseline: #383835;
+  --line-muted: #6d6d67;
+  --border: rgba(255, 255, 255, 0.1);
+  --series-1: #3987e5;
+  --series-2: #e5a339;
+  --series-1-wash: rgba(57, 135, 229, 0.16);
+  --accent-text: #3b8bec;
+  --status-good: #2fbf3f;
+  --status-warn: #fab219;
+  --status-crit: #e66767;
+  --card-bg: #1c1c1b;
+  --tip-bg: #17233a;
+}
+
+@theme inline {
+  --color-surface-1: var(--surface-1);
+  --color-page-plane: var(--page-plane);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-gridline: var(--gridline);
+  --color-border: var(--border);
+  --color-series-1: var(--series-1);
+  --color-series-2: var(--series-2);
+  --color-accent-text: var(--accent-text);
+  --color-status-good: var(--status-good);
+  --color-status-warn: var(--status-warn);
+  --color-status-crit: var(--status-crit);
+  --color-card-bg: var(--card-bg);
+  --color-tip-bg: var(--tip-bg);
+  --font-sans:
+    system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--page-plane);
+  color: var(--text-primary);
+}
+
+/* Explicit, high-contrast focus ring instead of relying on each browser's
+   faint default on custom-background controls (WCAG 2.4.7). */
+:focus-visible {
+  outline: 2px solid var(--series-1);
+  outline-offset: 2px;
+}
