@@ -162,6 +162,12 @@ async function fetchAllWorkouts(apiKey: string): Promise<HevyWorkout[]> {
     const res = await fetch(`${HEVY_BASE}/workouts?page=${page}&pageSize=${pageSize}`, {
       headers: { 'api-key': apiKey, Accept: 'application/json' },
     })
+    // Confirmed by hitting the real API: Hevy returns 404, not an empty
+    // 200, once `page` exceeds the account's actual page_count. That is
+    // "no more workouts", not a real error -- treating it as one threw
+    // away every page already fetched (0 upserted, error surfaced)
+    // instead of saving the workouts that came back fine on pages 1..16.
+    if (res.status === 404) break
     if (!res.ok) {
       throw new Error(`Hevy API HTTP ${res.status} on page ${page}`)
     }
