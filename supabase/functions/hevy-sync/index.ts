@@ -12,16 +12,21 @@
 // API key from provider_tokens (service_role bypasses RLS -- this table
 // has no policies granting access to anyone else, see migration 0001).
 //
-// IMPORTANT -- verify before first real deploy: the exact JSON shape of
+// Writes are batched (see upsertAllWorkouts), not one round-trip per
+// workout/exercise/set -- an earlier version awaited a DB call per
+// exercise per workout, which meant ~160 real workouts turned into
+// nearly 2000 sequential queries and the sync never finished inside
+// the Edge Function's execution window. Confirmed live before the fix.
+//
+// IMPORTANT -- verify before relying on it: the exact JSON shape of
 // GET /v1/workouts/events (used for incremental sync) was not directly
 // observable from Hevy's Swagger UI (it doesn't serve to non-browser
 // fetchers) -- the endpoint's existence and purpose ("Retrieve paged
 // workout events (updates/deletes) since a given date") is confirmed
-// from their published OpenAPI spec, but the response field names below
-// are a best-effort guess and MUST be checked against a real response
-// (e.g. via `curl` with a real api-key) before this is trusted to catch
-// deletions correctly. Full-refresh sync (fetchAllWorkouts) does not
-// depend on this and is safe to use today.
+// from their published OpenAPI spec, but the response field names are a
+// best-effort guess and MUST be checked against a real response before
+// being trusted to catch deletions correctly. Full-refresh sync
+// (fetchAllWorkouts) does not depend on this and is safe to use today.
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
@@ -61,6 +66,8 @@ const SET_TYPE_MAP: Record<string, string> = {
   dropset: 'dropset',
   amrap: 'amrap',
 }
+
+type AdminClient = ReturnType<typeof createClient>
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -116,10 +123,7 @@ Deno.serve(async (req) => {
     try {
       const workouts = await fetchAllWorkouts(hevyApiKey)
       fetched = workouts.length
-
-      for (const workout of workouts) {
-        upserted += await upsertWorkout(admin, userId, workout)
-      }
+      upserted = await upsertAllWorkouts(admin, userId, workouts)
 
       await admin
         .from('integrations')
@@ -164,9 +168,7 @@ async function fetchAllWorkouts(apiKey: string): Promise<HevyWorkout[]> {
     })
     // Confirmed by hitting the real API: Hevy returns 404, not an empty
     // 200, once `page` exceeds the account's actual page_count. That is
-    // "no more workouts", not a real error -- treating it as one threw
-    // away every page already fetched (0 upserted, error surfaced)
-    // instead of saving the workouts that came back fine on pages 1..16.
+    // "no more workouts", not a real error.
     if (res.status === 404) break
     if (!res.ok) {
       throw new Error(`Hevy API HTTP ${res.status} on page ${page}`)
@@ -180,95 +182,124 @@ async function fetchAllWorkouts(apiKey: string): Promise<HevyWorkout[]> {
   return all
 }
 
-/** Upserts one workout + its exercises/sets. Returns the number of set rows written. */
-async function upsertWorkout(
-  admin: ReturnType<typeof createClient>,
-  userId: string,
-  workout: HevyWorkout,
-): Promise<number> {
-  const date = (workout.start_time ?? workout.created_at ?? new Date().toISOString()).slice(0, 10)
-
-  const { data: session, error: sessionError } = await admin
-    .from('training_sessions')
-    .upsert(
-      {
-        user_id: userId,
-        source: 'hevy',
-        external_id: workout.id,
-        date,
-        start_time: workout.start_time ?? null,
-        end_time: workout.end_time ?? null,
-        training_type: 'other', // classifying push/pull/legs from exercise composition is phase 9 (training-plan analysis), not this sync step
-        notes: workout.title ?? null,
-        raw: workout,
-      },
-      { onConflict: 'user_id,source,external_id' },
-    )
-    .select('id')
-    .single()
-
-  if (sessionError || !session) {
-    throw new Error(`Failed to upsert session ${workout.id}: ${sessionError?.message}`)
-  }
-
-  // Existing sets for this session are replaced wholesale on each sync --
-  // simpler and still correct/idempotent, since Hevy is the source of
-  // truth for its own workouts and set order/count can change on edit.
-  await admin.from('sets').delete().eq('session_id', session.id)
-
-  let setCount = 0
-  for (const exercise of workout.exercises ?? []) {
-    const exerciseId = await upsertExercise(admin, userId, exercise)
-    const sets = exercise.sets ?? []
-    const rows = sets.map((s, i) => ({
-      session_id: session.id,
-      exercise_id: exerciseId,
-      set_index: s.index ?? i,
-      set_type: SET_TYPE_MAP[s.type ?? 'normal'] ?? 'work',
-      weight_kg: s.weight_kg ?? null,
-      reps: s.reps ?? null,
-      distance_meters: s.distance_meters ?? null,
-      duration_seconds: s.duration_seconds ?? null,
-      rpe: s.rpe ?? null,
-      quality: 'imported',
-    }))
-    if (rows.length) {
-      const { error } = await admin.from('sets').insert(rows)
-      if (error) throw new Error(`Failed to insert sets for ${exercise.title}: ${error.message}`)
-      setCount += rows.length
-    }
-  }
-  return setCount
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
+  return out
 }
 
-async function upsertExercise(
-  admin: ReturnType<typeof createClient>,
-  userId: string,
-  exercise: HevyExercise,
-): Promise<string> {
-  const canonicalName = exercise.title ?? 'Unknown exercise'
+/**
+ * Batched upsert for every fetched workout in a handful of round-trips
+ * total, instead of one round-trip per workout/exercise/set. That
+ * earlier per-row approach is what made a ~160-workout account take
+ * minutes and never actually finish inside the function's time budget.
+ */
+async function upsertAllWorkouts(admin: AdminClient, userId: string, workouts: HevyWorkout[]): Promise<number> {
+  if (!workouts.length) return 0
 
-  const { data: existing } = await admin
-    .from('exercises')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('canonical_name', canonicalName)
-    .maybeSingle()
-
-  if (existing) return existing.id as string
-
-  const { data: created, error } = await admin
-    .from('exercises')
-    .insert({
+  // 1) Upsert all training_sessions, chunked to keep each request body
+  // (which includes the full raw workout JSON) reasonably sized.
+  const sessionIdByExternalId = new Map<string, string>()
+  for (const batch of chunk(workouts, 200)) {
+    const rows = batch.map((w) => ({
       user_id: userId,
-      canonical_name: canonicalName,
-      source_names: { hevy: canonicalName },
-    })
-    .select('id')
-    .single()
+      source: 'hevy',
+      external_id: w.id,
+      date: (w.start_time ?? w.created_at ?? new Date().toISOString()).slice(0, 10),
+      start_time: w.start_time ?? null,
+      end_time: w.end_time ?? null,
+      training_type: 'other', // classifying push/pull/legs from exercise composition is phase 9 (training-plan analysis), not this sync step
+      notes: w.title ?? null,
+      raw: w,
+    }))
+    const { data, error } = await admin
+      .from('training_sessions')
+      .upsert(rows, { onConflict: 'user_id,source,external_id' })
+      .select('id, external_id')
+    if (error || !data) throw new Error(`Failed to upsert sessions: ${error?.message}`)
+    for (const row of data as { id: string; external_id: string }[]) {
+      sessionIdByExternalId.set(row.external_id, row.id)
+    }
+  }
 
-  if (error || !created) throw new Error(`Failed to create exercise ${canonicalName}: ${error?.message}`)
-  return created.id as string
+  // 2) Resolve every distinct exercise name in one lookup + one insert
+  // for whatever's missing, instead of a SELECT-then-maybe-INSERT per
+  // exercise per workout (the same lift reappears in nearly every
+  // session, so this alone was most of the wasted round-trips).
+  const allExerciseNames = new Set<string>()
+  for (const w of workouts) {
+    for (const ex of w.exercises ?? []) allExerciseNames.add(ex.title ?? 'Unknown exercise')
+  }
+  const nameList = Array.from(allExerciseNames)
+  const exerciseIdByName = new Map<string, string>()
+
+  if (nameList.length) {
+    const { data: existing, error: fetchErr } = await admin
+      .from('exercises')
+      .select('id, canonical_name')
+      .eq('user_id', userId)
+      .in('canonical_name', nameList)
+    if (fetchErr) throw new Error(`Failed to fetch exercises: ${fetchErr.message}`)
+    for (const row of (existing ?? []) as { id: string; canonical_name: string }[]) {
+      exerciseIdByName.set(row.canonical_name, row.id)
+    }
+
+    const missing = nameList.filter((n) => !exerciseIdByName.has(n))
+    if (missing.length) {
+      const { data: created, error: insertErr } = await admin
+        .from('exercises')
+        .insert(missing.map((name) => ({ user_id: userId, canonical_name: name, source_names: { hevy: name } })))
+        .select('id, canonical_name')
+      if (insertErr || !created) throw new Error(`Failed to create exercises: ${insertErr?.message}`)
+      for (const row of created as { id: string; canonical_name: string }[]) {
+        exerciseIdByName.set(row.canonical_name, row.id)
+      }
+    }
+  }
+
+  // 3) Clear existing sets for every touched session in one call, then
+  // bulk-insert the fresh set rows -- simpler and still correct/
+  // idempotent, since Hevy is the source of truth for its own workouts.
+  const sessionIds = Array.from(sessionIdByExternalId.values())
+  if (sessionIds.length) {
+    for (const idBatch of chunk(sessionIds, 500)) {
+      const { error } = await admin.from('sets').delete().in('session_id', idBatch)
+      if (error) throw new Error(`Failed to clear existing sets: ${error.message}`)
+    }
+  }
+
+  const setRows: Record<string, unknown>[] = []
+  for (const w of workouts) {
+    const sessionId = sessionIdByExternalId.get(w.id)
+    if (!sessionId) continue
+    for (const ex of w.exercises ?? []) {
+      const exerciseId = exerciseIdByName.get(ex.title ?? 'Unknown exercise')
+      if (!exerciseId) continue
+      ;(ex.sets ?? []).forEach((s, i) => {
+        setRows.push({
+          session_id: sessionId,
+          exercise_id: exerciseId,
+          set_index: s.index ?? i,
+          set_type: SET_TYPE_MAP[s.type ?? 'normal'] ?? 'work',
+          weight_kg: s.weight_kg ?? null,
+          reps: s.reps ?? null,
+          distance_meters: s.distance_meters ?? null,
+          duration_seconds: s.duration_seconds ?? null,
+          rpe: s.rpe ?? null,
+          quality: 'imported',
+        })
+      })
+    }
+  }
+
+  let inserted = 0
+  for (const batch of chunk(setRows, 500)) {
+    const { error } = await admin.from('sets').insert(batch)
+    if (error) throw new Error(`Failed to insert sets: ${error.message}`)
+    inserted += batch.length
+  }
+
+  return inserted
 }
 
 function json(body: unknown, status = 200): Response {
