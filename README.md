@@ -2,7 +2,7 @@
 
 Personal sport performance & goal management system — strength training (Hevy), cardio (Strava), Cluster 6 (Korps Mariniers) readiness, and a generic goal engine, in one dashboard. See [ARCHITECTURE.md](ARCHITECTURE.md) for how the pieces fit together and why.
 
-**Status: Phase 1 (foundation) complete.** The app shell, design system, canonical data model, database schema, and a working Hevy sync Edge Function exist. Strava OAuth, the full goal engine wiring, training-plan analysis, and the rest of the roadmap below are not built yet.
+**Status: Phase 2 (Hevy live wiring) complete.** Phase 1's foundation plus: Supabase Auth (single-user login/logout), a Settings form to save your Hevy API key server-side, and a working Sync page that calls the real `hevy-sync` Edge Function and shows real `integrations` status. None of this has been tested against a real Supabase project yet — only verified to degrade gracefully with fake/absent config. Strava OAuth, the goal engine's live data wiring, training-plan analysis, and the rest of the roadmap below are not built yet.
 
 ## Stack
 

@@ -1,10 +1,19 @@
 import { Card } from '../components/ui/Card'
+import { HevyKeyForm } from '../components/HevyKeyForm'
+import { isSupabaseConfigured } from '../lib/supabase'
 
 export function SettingsPage() {
   return (
     <div>
       <h2 className="mb-4 text-lg font-semibold">Settings</h2>
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <Card title="Hevy" subtitle="API-sleutel koppelen voor krachttraining-sync.">
+          {isSupabaseConfigured() ? (
+            <HevyKeyForm />
+          ) : (
+            <p className="text-sm text-text-muted">Vereist een gekoppeld Supabase-project — zie README.md.</p>
+          )}
+        </Card>
         <Card title="Doelen" subtitle="Deadlines, targets en prioriteit per doel bewerken.">
           <p className="text-sm text-text-muted">Nog te bouwen — komt met de Goal Engine (fase 6).</p>
         </Card>

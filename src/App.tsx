@@ -1,5 +1,8 @@
 import { HashRouter, Route, Routes } from 'react-router-dom'
+import { AuthProvider } from './lib/auth/AuthContext'
+import { ProtectedRoute } from './components/layout/ProtectedRoute'
 import { AppShell } from './components/layout/AppShell'
+import { LoginPage } from './pages/LoginPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { GoalsPage } from './pages/GoalsPage'
 import { TrainingPage } from './pages/TrainingPage'
@@ -20,19 +23,28 @@ import { SettingsPage } from './pages/SettingsPage'
  */
 export function App() {
   return (
-    <HashRouter>
-      <Routes>
-        <Route element={<AppShell />}>
-          <Route index element={<DashboardPage />} />
-          <Route path="goals" element={<GoalsPage />} />
-          <Route path="training" element={<TrainingPage />} />
-          <Route path="cardio" element={<CardioPage />} />
-          <Route path="cluster-6" element={<Cluster6Page />} />
-          <Route path="exercises/:slug" element={<ExercisePage />} />
-          <Route path="sync" element={<SyncPage />} />
-          <Route path="settings" element={<SettingsPage />} />
-        </Route>
-      </Routes>
-    </HashRouter>
+    <AuthProvider>
+      <HashRouter>
+        <Routes>
+          <Route path="login" element={<LoginPage />} />
+          <Route
+            element={
+              <ProtectedRoute>
+                <AppShell />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<DashboardPage />} />
+            <Route path="goals" element={<GoalsPage />} />
+            <Route path="training" element={<TrainingPage />} />
+            <Route path="cardio" element={<CardioPage />} />
+            <Route path="cluster-6" element={<Cluster6Page />} />
+            <Route path="exercises/:slug" element={<ExercisePage />} />
+            <Route path="sync" element={<SyncPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+          </Route>
+        </Routes>
+      </HashRouter>
+    </AuthProvider>
   )
 }
