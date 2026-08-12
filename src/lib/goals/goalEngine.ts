@@ -131,3 +131,50 @@ function roundToIncrement(value: number, increment: number): number {
   if (increment <= 0) return value
   return Math.round(value / increment) * increment
 }
+
+export interface ScheduleComparisonInput {
+  startValue: number
+  currentValue: number
+  targetValue: number
+  startDate: string
+  deadline: string
+  asOf?: Date
+}
+
+export interface ScheduleComparison {
+  /** Where a straight line from start to target says you should be today. */
+  expectedValueToday: number
+  /** currentValue - expectedValueToday. Positive = ahead of schedule, negative = behind. */
+  delta: number
+  /** Pace (per 30 days) needed from today to still hit target by the deadline. Null once the deadline has passed or the goal is already achieved. */
+  requiredRatePerMonth: number | null
+}
+
+/**
+ * Answers "how much am I ahead/behind schedule right now", not just
+ * "will I make the deadline" (that's computeGoalStatus). Needs both a
+ * start value and a deadline -- open-ended goals (brief section 12's
+ * dips/pull-ups, no fixed deadline) have no "schedule" to compare against,
+ * so this returns null rather than inventing one.
+ */
+export function compareToSchedule({
+  startValue,
+  currentValue,
+  targetValue,
+  startDate,
+  deadline,
+  asOf = new Date(),
+}: ScheduleComparisonInput): ScheduleComparison | null {
+  const totalDays = (new Date(deadline).getTime() - new Date(startDate).getTime()) / 86_400_000
+  if (totalDays <= 0) return null
+
+  const daysSinceStart = Math.max(0, Math.min(totalDays, (asOf.getTime() - new Date(startDate).getTime()) / 86_400_000))
+  const expectedValueToday = startValue + (targetValue - startValue) * (daysSinceStart / totalDays)
+  const delta = currentValue - expectedValueToday
+
+  const daysRemaining = (new Date(deadline).getTime() - asOf.getTime()) / 86_400_000
+  const alreadyAchieved = currentValue >= targetValue
+  const requiredRatePerMonth = !alreadyAchieved && daysRemaining > 0 ? ((targetValue - currentValue) / daysRemaining) * 30 : null
+
+  return { expectedValueToday, delta, requiredRatePerMonth }
+}

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  compareToSchedule,
   computeGoalStatus,
   fitLinearTrend,
   forecastAchievementDate,
@@ -171,5 +172,85 @@ describe('trendConfidence', () => {
     expect(trendConfidence({ slopePerDay: 0.1, intercept: 0, n: 3 })).toBe('low')
     expect(trendConfidence({ slopePerDay: 0.1, intercept: 0, n: 5 })).toBe('medium')
     expect(trendConfidence({ slopePerDay: 0.1, intercept: 0, n: 9 })).toBe('high')
+  })
+})
+
+describe('compareToSchedule', () => {
+  it('reports a positive delta when ahead of the straight-line schedule', () => {
+    // Halfway through the timeline, schedule says 85kg; actually at 90kg.
+    const result = compareToSchedule({
+      startValue: 80,
+      currentValue: 90,
+      targetValue: 100,
+      startDate: '2026-01-01',
+      deadline: '2027-01-01',
+      asOf: new Date('2026-07-02'), // ~halfway through the year
+    })
+    expect(result).not.toBeNull()
+    expect(result!.expectedValueToday).toBeCloseTo(90, 0)
+    expect(result!.delta).toBeGreaterThan(0)
+  })
+
+  it('reports a negative delta and a required pace when behind schedule', () => {
+    // Halfway through the year the straight line says 90kg; only at 84kg.
+    const result = compareToSchedule({
+      startValue: 80,
+      currentValue: 84,
+      targetValue: 100,
+      startDate: '2026-01-01',
+      deadline: '2027-01-01',
+      asOf: new Date('2026-07-02'),
+    })
+    expect(result).not.toBeNull()
+    expect(result!.delta).toBeLessThan(0)
+    expect(result!.requiredRatePerMonth).not.toBeNull()
+    expect(result!.requiredRatePerMonth!).toBeGreaterThan(0)
+  })
+
+  it('can be ahead of the naive straight-line schedule early on even while forecasted to miss the deadline on current trend -- these are different questions', () => {
+    // Real numbers: 22 days into a 165-day plan from 70kg to 100kg, already
+    // at 87.8kg. The straight line only expects ~74kg this early, so
+    // "ahead of the naive linear schedule today" and "on track to hit the
+    // deadline given the actual (decelerating) trend" can genuinely disagree.
+    const result = compareToSchedule({
+      startValue: 70,
+      currentValue: 87.8,
+      targetValue: 100,
+      startDate: '2026-07-20',
+      deadline: '2027-01-01',
+      asOf: new Date('2026-08-11'),
+    })
+    expect(result).not.toBeNull()
+    expect(result!.delta).toBeGreaterThan(0)
+  })
+
+  it('returns null requiredRatePerMonth once the goal is already achieved', () => {
+    const result = compareToSchedule({
+      startValue: 70,
+      currentValue: 100,
+      targetValue: 100,
+      startDate: '2026-01-01',
+      deadline: '2027-01-01',
+      asOf: new Date('2026-06-01'),
+    })
+    expect(result!.requiredRatePerMonth).toBeNull()
+  })
+
+  it('returns null requiredRatePerMonth once the deadline has passed', () => {
+    const result = compareToSchedule({
+      startValue: 70,
+      currentValue: 90,
+      targetValue: 100,
+      startDate: '2026-01-01',
+      deadline: '2026-06-01',
+      asOf: new Date('2026-08-11'),
+    })
+    expect(result!.requiredRatePerMonth).toBeNull()
+  })
+
+  it('returns null for an invalid (non-positive) timeline instead of dividing by zero', () => {
+    expect(
+      compareToSchedule({ startValue: 70, currentValue: 80, targetValue: 100, startDate: '2027-01-01', deadline: '2026-01-01' }),
+    ).toBeNull()
   })
 })

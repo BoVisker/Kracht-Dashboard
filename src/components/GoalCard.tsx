@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import type { Goal } from '../lib/types/canonical'
 import { Badge, type BadgeTone } from './ui/Badge'
 import { ProgressBar } from './ui/ProgressBar'
-import { isDeadlineExpired } from '../lib/goals/goalEngine'
+import { compareToSchedule, isDeadlineExpired } from '../lib/goals/goalEngine'
 
 const STATUS_LABEL: Record<Goal['status'], string> = {
   on_track: 'Op schema',
@@ -30,6 +30,46 @@ function formatValue(value: number | null, unit: string): string {
 function formatDate(iso: string | null): string {
   if (!iso) return '–'
   return new Date(iso).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' })
+}
+
+function fmt1(n: number): string {
+  return (Math.round(n * 10) / 10).toString().replace('.', ',')
+}
+
+/**
+ * Only for priority-1 goals (explicit user request) -- "how far ahead/
+ * behind a straight line from start to target am I today", separate
+ * from the trend-based forecast/status above. The two can genuinely
+ * disagree (see goalEngine.test.ts): early progress can outpace a naive
+ * linear schedule while the actual (decelerating) trend still forecasts
+ * missing the deadline, so this is labeled as its own comparison rather
+ * than folded into the status badge.
+ */
+function ScheduleNote({ goal }: { goal: Goal }) {
+  if (goal.priority !== 1 || goal.status === 'achieved' || goal.status === 'expired') return null
+  if (goal.startValue == null || goal.currentValue == null || !goal.deadline) return null
+
+  const result = compareToSchedule({
+    startValue: goal.startValue,
+    currentValue: goal.currentValue,
+    targetValue: goal.targetValue,
+    startDate: goal.startDate,
+    deadline: goal.deadline,
+  })
+  if (!result) return null
+
+  const ahead = result.delta >= 0
+  return (
+    <div className="mt-3 rounded-md border border-border bg-surface-1 px-3 py-2 text-xs">
+      <span className="font-semibold text-text-primary">
+        {ahead ? `+${fmt1(result.delta)} ${goal.unit} vóór op schema` : `${fmt1(Math.abs(result.delta))} ${goal.unit} achter op schema`}
+      </span>
+      {!ahead && result.requiredRatePerMonth != null && (
+        <span className="text-text-secondary"> — nodig: {fmt1(result.requiredRatePerMonth)} {goal.unit}/maand om de deadline nog te halen.</span>
+      )}
+      <div className="mt-0.5 text-text-muted">T.o.v. een lineair schema van start tot deadline — een andere inschatting dan de trend-forecast hierboven.</div>
+    </div>
+  )
 }
 
 /** Layout follows brief section 48's mock exactly: current → target, bar, remaining, deadline, status, forecast. */
@@ -66,6 +106,8 @@ export function GoalCard({ goal, percent }: { goal: Goal; percent: number | null
           <div className="text-text-primary">{goal.forecastDate ? formatDate(goal.forecastDate) : 'Insufficient data'}</div>
         </div>
       </div>
+
+      <ScheduleNote goal={goal} />
 
       {expired && goal.status !== 'achieved' && (
         <div className="mt-3 rounded-md border border-status-crit/30 bg-status-crit/10 px-3 py-2 text-xs text-text-primary">
