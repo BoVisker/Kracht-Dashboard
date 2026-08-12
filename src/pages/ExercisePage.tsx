@@ -12,6 +12,11 @@ function formatDate(d: Date): string {
   return d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
+/** Short form for axis ticks -- the full date (with year) is still in each point's tooltip/table label. */
+function formatDateShort(d: Date): string {
+  return d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short' })
+}
+
 /** Best (highest e1RM) set per session, in chronological order -- the same "top set of the day" idea the original prototype used, generalized to any exercise. */
 function bestSetPerSession(history: ExerciseSetHistoryEntry[]): { sessionId: string; date: Date; weightKg: number; reps: number; e1rm: number }[] {
   const bySession = new Map<string, { date: Date; weightKg: number; reps: number; e1rm: number }>()
@@ -47,9 +52,16 @@ export function ExercisePage() {
     )
   }
 
+  // Weeks-since-first-session, not raw days: LineChart's tick-spacing logic
+  // assumes the x-domain's span is roughly "number of ticks worth" of
+  // units. With real multi-month history that's 200+ raw days, which
+  // packed dozens of illegible overlapping date labels along the bottom
+  // axis -- confirmed live. Weeks keeps the same chart readable whether
+  // the history spans one month or two years.
   const startDate = sessionSeries[0]?.date
+  const MS_PER_WEEK = 7 * 86_400_000
   const chartPoints: ChartPoint[] = sessionSeries.map((s) => {
-    const x = startDate ? (s.date.getTime() - startDate.getTime()) / 86_400_000 : 0
+    const x = startDate ? (s.date.getTime() - startDate.getTime()) / MS_PER_WEEK : 0
     const isPR = records.estimated_1rm != null && Math.abs(s.e1rm - records.estimated_1rm.value) < 0.05
     return {
       x,
@@ -87,7 +99,7 @@ export function ExercisePage() {
         <LineChart
           title={`Geschat 1RM voor ${label} over tijd`}
           actualSeries={chartPoints}
-          xAxisLabel={(x) => (startDate ? formatDate(new Date(startDate.getTime() + x * 86_400_000)) : String(x))}
+          xAxisLabel={(x) => (startDate ? formatDateShort(new Date(startDate.getTime() + x * MS_PER_WEEK)) : String(x))}
           emptyMessage="Nog geen sets gevonden voor deze oefening."
         />
       </Card>
