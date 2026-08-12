@@ -2,7 +2,7 @@
 
 Personal sport performance & goal management system — strength training (Hevy), cardio (Strava), Cluster 6 (Korps Mariniers) readiness, and a generic goal engine, in one dashboard. See [ARCHITECTURE.md](ARCHITECTURE.md) for how the pieces fit together and why.
 
-**Status: Phase 3 (Strava OAuth + sync) built, pending your Strava app credentials to go live.** Phases 1-2 are live and verified end-to-end against a real Supabase project: auth, Hevy sync (idempotent, batched, ~3-4s for 160 workouts / 3200+ sets), and goal `current_value` computed automatically from synced sets after every sync. Strava's OAuth flow, token refresh, and cardio sync are built the same way but need your Strava API app's Client ID/Secret to actually run — see "Strava" below. Training-plan analysis, Cluster 6 data entry, and the rest of the roadmap are not built yet.
+**Status: Phases 1-9 live and verified end-to-end against a real Supabase project.** Auth, Hevy sync (idempotent, batched, ~3-4s for 160 workouts / 3200+ sets), Strava OAuth + polling sync, Training/Cardio/Exercise pages on real data, strength analytics (e1RM, PR detection, exercise pinning), the full goal engine (trend fit, forecast date, schedule-pace note, create/edit/delete UI in Settings), Cluster 6 readiness tracking (with Strava-based suggestions for run/march tests), Push/Pull/Legs + Heavy/Volume session classification, and a PR achievements feed (Command Center + dedicated Achievements page) are all built and live. Remaining roadmap: recovery tracking, weekly/monthly reports, forecasting refinements, Strava webhooks (currently polling-only), and Garmin (blocked — enterprise-only API access).
 
 ## Stack
 
@@ -85,13 +85,12 @@ Not implemented: Strava webhooks (brief section 7) — sync is polling-only for 
 
 ## Roadmap
 
-Phases 1-2 done and live-verified. Phase 3 (Strava) is built pending your app credentials. Remaining, roughly in order: wire Training/Cardio/Exercise pages to the real synced data (they're currently honest placeholders even though the data exists), strength analytics (e1RM/PR/volume per exercise, generalizing what `recomputeGoalProgress` does for goals specifically), full goal engine UI (trend/forecast, editable in Settings), Cluster 6 readiness data entry, recovery analytics, per-session training analysis, weekly/monthly reports, achievements + celebrations, forecasting, Garmin adapter (if Garmin ever opens individual access), Strava webhooks, then testing/perf/security polish.
+Phases 1-9 done and live-verified (see Status above). Remaining, no fixed order: recovery/herstel tracking, weekly/monthly reports, forecasting refinements (e.g. confidence intervals on the trend fit), a Cluster 6 Settings UI to edit requirements (currently a hardcoded seed array, deliberately not hardcoded into logic — see `src/lib/cluster6/requirements.ts`), Strava webhooks (replacing polling), Garmin adapter (blocked — Garmin's individual-developer API access is enterprise-only, confirmed during Phase 1 research), then general testing/perf/security polish.
 
 ## Known gaps / honesty notes
 
 - Cluster 6 requirement numbers (`src/lib/cluster6/requirements.ts`) are sourced from a third-party site (fitvoordefensie.nl), not werkenbijdefensie.nl directly (that page 404'd during research) — verify before relying on them for anything that matters.
 - The Hevy `/v1/workouts/events` incremental-sync endpoint's exact response shape wasn't directly observable (Hevy's Swagger UI doesn't serve to non-browser fetchers) — `hevy-sync` currently does a full refresh each run, which is correct but not incremental. See the comment in `supabase/functions/hevy-sync/index.ts`.
-- No Settings UI yet to edit goals/cluster requirements — those pages currently say so rather than pretending to work. The Hevy key form does work (Settings → Hevy).
+- No Settings UI yet to edit Cluster 6 requirements — those are a hardcoded (but centralized, non-logic-embedded) seed array. Goals themselves are fully editable in Settings.
 - Strava webhooks aren't implemented — sync is polling-only (click "Sync now"), same scope boundary as Hevy.
-- `recomputeGoalProgress` (in `hevy-sync`) only updates `current_value`; it doesn't compute `forecast_date` or a trend-based status yet — goals show real current/target numbers but the status badge stays conservative until that lands.
-- Training/Cardio/Exercise-detail pages don't query real data yet even though `training_sessions`/`sets`/`cardio_sessions` are populated — that wiring is a specific, separate next step, not implied by "sync works".
+- Push/Pull/Legs and Heavy/Volume session classification is a keyword heuristic on the Hevy workout title only — roughly 40% of this user's real session titles are Hevy's generic defaults with no recognizable pattern, and those honestly stay unclassified rather than guessed.

@@ -69,3 +69,72 @@ export function detectPersonalRecords(history: SetRecord[]): Partial<Record<Pers
 
   return records
 }
+
+export interface PersonalRecordEvent {
+  kind: PersonalRecordKind
+  value: number
+  date: Date
+  detail: string
+}
+
+/**
+ * Chronological PR events, for an achievements feed -- unlike
+ * detectPersonalRecords (which only returns the current all-time best per
+ * kind), this walks the full history and emits one event every time a set
+ * genuinely beats the *previous* best. The very first qualifying set for a
+ * kind only sets the baseline silently: with no prior number to beat, "first
+ * time doing this exercise" isn't an achievement, it's just a first attempt.
+ * Requires history sorted ascending by date (callers already produce it
+ * this way, e.g. useExerciseDetail).
+ */
+export function findPRHistory(history: SetRecord[]): PersonalRecordEvent[] {
+  const events: PersonalRecordEvent[] = []
+  let bestWeight: number | null = null
+  let bestReps: number | null = null
+  let bestE1rm: number | null = null
+
+  for (const set of history) {
+    if (set.reps <= 0) continue
+
+    if (bestWeight === null || set.weightKg > bestWeight) {
+      if (bestWeight !== null) events.push({ kind: 'weight', value: set.weightKg, date: set.date, detail: `${set.weightKg}kg × ${set.reps}` })
+      bestWeight = set.weightKg
+    }
+    if (bestReps === null || set.reps > bestReps) {
+      if (bestReps !== null) events.push({ kind: 'reps', value: set.reps, date: set.date, detail: `${set.weightKg}kg × ${set.reps}` })
+      bestReps = set.reps
+    }
+    const e1rm = estimate1RM(set.weightKg, set.reps).blended
+    if (bestE1rm === null || e1rm > bestE1rm) {
+      if (bestE1rm !== null) {
+        events.push({ kind: 'estimated_1rm', value: Math.round(e1rm * 10) / 10, date: set.date, detail: `${set.weightKg}kg × ${set.reps}` })
+      }
+      bestE1rm = e1rm
+    }
+  }
+
+  const volumeBySession = new Map<string, { total: number; date: Date; setCount: number }>()
+  for (const set of history) {
+    if (set.reps <= 0) continue
+    const existing = volumeBySession.get(set.sessionId)
+    const addition = set.weightKg * set.reps
+    if (existing) {
+      existing.total += addition
+      existing.setCount += 1
+    } else {
+      volumeBySession.set(set.sessionId, { total: addition, date: set.date, setCount: 1 })
+    }
+  }
+  const sessionsByDate = [...volumeBySession.values()].sort((a, b) => a.date.getTime() - b.date.getTime())
+  let bestVolume: number | null = null
+  for (const session of sessionsByDate) {
+    if (bestVolume === null || session.total > bestVolume) {
+      if (bestVolume !== null) {
+        events.push({ kind: 'volume', value: Math.round(session.total * 10) / 10, date: session.date, detail: `${session.setCount} sets` })
+      }
+      bestVolume = session.total
+    }
+  }
+
+  return events.sort((a, b) => a.date.getTime() - b.date.getTime())
+}

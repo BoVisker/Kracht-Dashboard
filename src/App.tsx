@@ -10,6 +10,7 @@ import { CardioPage } from './pages/CardioPage'
 import { Cluster6Page } from './pages/Cluster6Page'
 import { ExercisePage } from './pages/ExercisePage'
 import { ExercisesIndexPage } from './pages/ExercisesIndexPage'
+import { AchievementsPage } from './pages/AchievementsPage'
 import { SyncPage } from './pages/SyncPage'
 import { SettingsPage } from './pages/SettingsPage'
 
@@ -42,6 +43,7 @@ export function App() {
             <Route path="cluster-6" element={<Cluster6Page />} />
             <Route path="exercises" element={<ExercisesIndexPage />} />
             <Route path="exercises/:id" element={<ExercisePage />} />
+            <Route path="achievements" element={<AchievementsPage />} />
             <Route path="sync" element={<SyncPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>

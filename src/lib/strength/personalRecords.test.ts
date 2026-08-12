@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { detectPersonalRecords, type SetRecord } from './personalRecords'
+import { detectPersonalRecords, findPRHistory, type SetRecord } from './personalRecords'
 
 describe('detectPersonalRecords', () => {
   it('returns an empty object for no history rather than fabricated zeros', () => {
@@ -50,5 +50,70 @@ describe('detectPersonalRecords', () => {
   it('ignores sets with zero or negative reps rather than letting them skew a PR', () => {
     const history: SetRecord[] = [{ sessionId: 's1', date: new Date('2026-01-01'), weightKg: 999, reps: 0 }]
     expect(detectPersonalRecords(history)).toEqual({})
+  })
+})
+
+describe('findPRHistory', () => {
+  it('returns no events for no history', () => {
+    expect(findPRHistory([])).toEqual([])
+  })
+
+  it('does not treat the first-ever set as an achievement -- nothing to beat yet', () => {
+    const history: SetRecord[] = [{ sessionId: 's1', date: new Date('2026-01-01'), weightKg: 80, reps: 5 }]
+    expect(findPRHistory(history)).toEqual([])
+  })
+
+  it('emits a weight event only when a later set beats the running best', () => {
+    const history: SetRecord[] = [
+      { sessionId: 's1', date: new Date('2026-01-01'), weightKg: 80, reps: 5 },
+      { sessionId: 's2', date: new Date('2026-01-08'), weightKg: 80, reps: 5 }, // ties, not a new PR
+      { sessionId: 's3', date: new Date('2026-01-15'), weightKg: 85, reps: 5 },
+    ]
+    const events = findPRHistory(history).filter((e) => e.kind === 'weight')
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({ value: 85, date: new Date('2026-01-15') })
+  })
+
+  it('tracks weight/reps/estimated_1rm/volume independently, each with its own baseline', () => {
+    const history: SetRecord[] = [
+      { sessionId: 's1', date: new Date('2026-01-01'), weightKg: 80, reps: 5 }, // baseline for all kinds
+      { sessionId: 's2', date: new Date('2026-01-08'), weightKg: 60, reps: 12 }, // reps PR, not weight PR
+      { sessionId: 's3', date: new Date('2026-01-15'), weightKg: 90, reps: 3 }, // weight PR, not reps PR
+    ]
+    const events = findPRHistory(history)
+    const kinds = events.map((e) => e.kind).sort()
+    expect(kinds).toContain('reps')
+    expect(kinds).toContain('weight')
+    expect(events.find((e) => e.kind === 'reps')?.date).toEqual(new Date('2026-01-08'))
+    expect(events.find((e) => e.kind === 'weight')?.date).toEqual(new Date('2026-01-15'))
+  })
+
+  it('detects a session-volume PR only when a later session beats the prior best total', () => {
+    const history: SetRecord[] = [
+      { sessionId: 's1', date: new Date('2026-01-01'), weightKg: 80, reps: 5 }, // session total 400 -> baseline
+      { sessionId: 's2', date: new Date('2026-01-08'), weightKg: 50, reps: 5 }, // 250, below baseline
+      { sessionId: 's3', date: new Date('2026-01-15'), weightKg: 80, reps: 6 }, // 480, new volume PR
+    ]
+    const volumeEvents = findPRHistory(history).filter((e) => e.kind === 'volume')
+    expect(volumeEvents).toHaveLength(1)
+    expect(volumeEvents[0]).toMatchObject({ value: 480, date: new Date('2026-01-15') })
+  })
+
+  it('ignores sets with zero or negative reps', () => {
+    const history: SetRecord[] = [
+      { sessionId: 's1', date: new Date('2026-01-01'), weightKg: 80, reps: 5 },
+      { sessionId: 's2', date: new Date('2026-01-08'), weightKg: 999, reps: 0 },
+    ]
+    expect(findPRHistory(history)).toEqual([])
+  })
+
+  it('returns events in chronological order', () => {
+    const history: SetRecord[] = [
+      { sessionId: 's1', date: new Date('2026-01-01'), weightKg: 80, reps: 5 },
+      { sessionId: 's2', date: new Date('2026-01-08'), weightKg: 85, reps: 6 },
+      { sessionId: 's3', date: new Date('2026-01-15'), weightKg: 90, reps: 7 },
+    ]
+    const dates = findPRHistory(history).map((e) => e.date.getTime())
+    expect(dates).toEqual([...dates].sort((a, b) => a - b))
   })
 })
