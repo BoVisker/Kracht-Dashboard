@@ -58,6 +58,7 @@ Deno.serve(async (req) => {
       access_token: string
       refresh_token: string
       expires_at: number // unix seconds
+      athlete?: { id: number } // only present on the authorization_code grant, not on refresh
     }
 
     const admin = createClient(supabaseUrl, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
@@ -68,6 +69,9 @@ Deno.serve(async (req) => {
         access_token: tokenData.access_token,
         refresh_token: tokenData.refresh_token,
         expires_at: new Date(tokenData.expires_at * 1000).toISOString(),
+        // Strava webhook events carry only this athlete id, never a Supabase
+        // user_id -- store it now so strava-webhook can route events back.
+        external_account_id: tokenData.athlete ? String(tokenData.athlete.id) : null,
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'user_id,provider' },

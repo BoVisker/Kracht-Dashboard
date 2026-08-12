@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { exchangeStravaCode } from '../lib/providers/stravaOAuth'
+import { subscribeStravaWebhook } from '../lib/providers/api'
 import { useInvalidateIntegrations } from '../hooks/useIntegrationStatus'
 
 /**
@@ -33,6 +34,12 @@ export function StravaCallbackHandler() {
       } else {
         setStatus('idle')
         invalidateIntegrations()
+        // Fire-and-forget: sets up push-based updates going forward. Not
+        // critical path -- "Sync now" polling works regardless of whether
+        // this succeeds, so a failure here doesn't need to surface as an
+        // error to the user (it already has its own retry via the Sync
+        // page next time a manual sync happens to prompt a resubscribe).
+        void subscribeStravaWebhook()
       }
     })
   }, [invalidateIntegrations])

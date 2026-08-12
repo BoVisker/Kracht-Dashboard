@@ -22,7 +22,7 @@ These are the steps only you can do — Claude cannot create accounts, register 
    ```bash
    supabase login
    supabase link --project-ref <your-project-ref>
-   supabase db push          # applies supabase/migrations/0001_init.sql
+   supabase db push          # applies every migration in supabase/migrations/
    supabase functions deploy hevy-sync
    supabase functions deploy save-provider-token
    supabase functions deploy strava-exchange-token
@@ -63,15 +63,20 @@ npm run dev
 1. Create an API app at [strava.com/settings/api](https://www.strava.com/settings/api).
 2. Set **Authorization Callback Domain** to your GitHub Pages domain only — no `https://`, no path. For the default project URL that's `bovisker.github.io`; if you ever add a custom domain, update this to match.
 3. Note the **Client ID** (public) and **Client Secret** (not public).
-4. Set the secret server-side:
+4. Set the secrets server-side (the webhook verify token can be any random string you generate yourself, e.g. `openssl rand -hex 24` — Strava just echoes it back once during the subscription handshake to prove the callback URL is really yours):
    ```bash
    supabase secrets set STRAVA_CLIENT_ID=<client-id>
    supabase secrets set STRAVA_CLIENT_SECRET=<client-secret>
+   supabase secrets set STRAVA_WEBHOOK_VERIFY_TOKEN=<any-random-string>
    ```
-5. Add `VITE_STRAVA_CLIENT_ID=<client-id>` to `.env.local` for local dev, and as a GitHub repo Variable (same place as the Supabase ones) for production.
-6. On the Sync page, click "Connect Strava" — it redirects to Strava, then back to the app, which exchanges the code for tokens via `strava-exchange-token` and stores them the same way Hevy's key is stored (server-side only, `provider_tokens` table with no client-readable RLS policy).
+5. Deploy `strava-webhook` with JWT verification disabled — Strava calls this endpoint directly and never carries a Supabase session:
+   ```bash
+   supabase functions deploy strava-webhook --no-verify-jwt
+   ```
+6. Add `VITE_STRAVA_CLIENT_ID=<client-id>` to `.env.local` for local dev, and as a GitHub repo Variable (same place as the Supabase ones) for production.
+7. On the Sync page, click "Connect Strava" — it redirects to Strava, then back to the app, which exchanges the code for tokens via `strava-exchange-token` and stores them the same way Hevy's key is stored (server-side only, `provider_tokens` table with no client-readable RLS policy). This also auto-subscribes to Strava's webhook (`strava-webhook`, action `subscribe`) so future activity changes push in near real-time, not just on manual "Sync now".
 
-Not implemented: Strava webhooks (brief section 7) — sync is polling-only for now, same as Hevy. Calories aren't available from the activity-list endpoint Strava uses here, so `cardio_sessions.calories` stays null rather than showing a fabricated number.
+Strava activity changes now push automatically via `strava-webhook` (real-time, on top of manual "Sync now" as a fallback) — see "Roadmap" below. Calories aren't available from the activity-list endpoint Strava uses here, so `cardio_sessions.calories` stays null rather than showing a fabricated number.
 
 ## Scripts
 
@@ -85,7 +90,7 @@ Not implemented: Strava webhooks (brief section 7) — sync is polling-only for 
 
 ## Roadmap
 
-Phases 1-11 done and live-verified: the two above, plus a PR achievements feed (Command Center + `/achievements`) and a weekly/monthly report (`/reports`). Also done: recovery tracking (see below — built without live Garmin sync); a Cluster 6 Settings UI to edit requirement targets/buffer margins per user (`cluster_requirement_overrides`, wired into `Cluster6Page`); and a forecasting refinement — `fitLinearTrend` now computes R² alongside the slope, and `trendConfidence` requires both enough points *and* a reasonably tight fit before calling a forecast "betrouwbaar" (many scattered points no longer counts as high confidence on its own). `recomputeGoalProgress` writes this to `goals.confidence` on every sync; `GoalCard` shows it next to the forecast date. Remaining: Strava webhooks (replacing polling), then general testing/perf/security polish.
+Phases 1-11 done and live-verified: the two above, plus a PR achievements feed (Command Center + `/achievements`) and a weekly/monthly report (`/reports`). Also done: recovery tracking (see below — built without live Garmin sync); a Cluster 6 Settings UI to edit requirement targets/buffer margins per user (`cluster_requirement_overrides`, wired into `Cluster6Page`); a forecasting refinement — `fitLinearTrend` now computes R² alongside the slope, and `trendConfidence` requires both enough points *and* a reasonably tight fit before calling a forecast "betrouwbaar" (`recomputeGoalProgress` writes this to `goals.confidence` on every sync; `GoalCard` shows it next to the forecast date); and Strava webhooks — `strava-webhook` (deployed with `--no-verify-jwt`, since Strava calls it directly with no Supabase session) subscribes once via Strava's push-subscription API, verifies the one-time `hub.challenge` handshake, and on every activity create/update/delete re-fetches just that one activity and upserts it -- confirmed live end-to-end (a real activity round-tripped through the handler within seconds of the event). `strava-sync` ("Sync now") stays as the bulk-catchup fallback for first connects or missed deliveries; both share `_shared/stravaAuth.ts` and `_shared/stravaCardio.ts` now instead of duplicating token-refresh and row-mapping logic. Remaining: general testing/perf/security polish (deliberately last, deserves more review time than an unattended session should give it).
 
 ## Garmin research findings (2026-08-12)
 

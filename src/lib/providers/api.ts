@@ -35,3 +35,12 @@ export async function triggerSync(provider: 'hevy' | 'strava'): Promise<SyncResu
   if (error) return { error: error.message }
   return data as SyncResult
 }
+
+/** Best-effort: creates (or confirms) the Strava push subscription so future activity changes sync automatically, not just on manual "Sync now". Not on the critical path -- polling still works if this fails. */
+export async function subscribeStravaWebhook(): Promise<{ error: string | null }> {
+  if (!supabase) return { error: 'Supabase is niet geconfigureerd.' }
+  const { data, error } = await supabase.functions.invoke('strava-webhook', { body: { action: 'subscribe' } })
+  if (error) return { error: error.message }
+  if (data?.error) return { error: data.error as string }
+  return { error: null }
+}
