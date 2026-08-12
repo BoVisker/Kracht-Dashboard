@@ -2,8 +2,9 @@ import { useMemo, useState } from 'react'
 import { Card } from '../components/ui/Card'
 import { Badge, type BadgeTone } from '../components/ui/Badge'
 import { CLUSTER_6_REQUIREMENTS, type ClusterCategory, type ClusterRequirement } from '../lib/cluster6/requirements'
-import { classifyClusterResult, type RequirementStatus } from '../lib/cluster6/classify'
+import { classifyClusterResult, DEFAULT_BUFFER_CONFIG, type RequirementStatus, type ClusterBufferConfig } from '../lib/cluster6/classify'
 import { useClusterTestResults, useLogClusterTest } from '../hooks/useClusterTests'
+import { useClusterRequirementOverrides, type ClusterRequirementOverride } from '../hooks/useClusterRequirementOverrides'
 import { useCardioSessions } from '../hooks/useCardioSessions'
 import type { CardioSession } from '../lib/types/canonical'
 import { isSupabaseConfigured } from '../lib/supabase'
@@ -92,16 +93,24 @@ function RequirementCard({
   req,
   result,
   suggestion,
+  override,
 }: {
   req: ClusterRequirement
   result: { value: number; testedAt: string } | undefined
   suggestion: StravaSuggestion | null
+  override: ClusterRequirementOverride | undefined
 }) {
   const logTest = useLogClusterTest()
   const [showForm, setShowForm] = useState(false)
   const [value, setValue] = useState('')
 
-  const status = classifyClusterResult(req, result?.value ?? null)
+  const effectiveTarget = override?.targetValue ?? req.targetValue
+  const bufferConfig: ClusterBufferConfig = {
+    bufferMargin: override?.bufferMargin ?? DEFAULT_BUFFER_CONFIG.bufferMargin,
+    strongBufferMargin: override?.strongBufferMargin ?? DEFAULT_BUFFER_CONFIG.strongBufferMargin,
+    approachingThreshold: DEFAULT_BUFFER_CONFIG.approachingThreshold,
+  }
+  const status = classifyClusterResult({ ...req, targetValue: effectiveTarget }, result?.value ?? null, bufferConfig)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -126,7 +135,8 @@ function RequirementCard({
       </div>
       <p className="mb-2 text-sm text-text-secondary">{req.detail}</p>
       <div className="text-xs text-text-muted">
-        Target: {req.targetValue} {req.unit}
+        Target: {effectiveTarget} {req.unit}
+        {override?.targetValue != null && ' (aangepast)'}
         {result && (
           <>
             {' · '}Laatste: {result.value} {req.unit} ({formatDate(result.testedAt)})
@@ -177,15 +187,17 @@ function RequirementCard({
 export function Cluster6Page() {
   const { data: results, isLoading } = useClusterTestResults()
   const { data: cardioSessions } = useCardioSessions()
+  const { data: overrides } = useClusterRequirementOverrides()
 
   const suggestions = useMemo(() => {
     const map: Record<string, StravaSuggestion | null> = {}
     if (!cardioSessions?.length) return map
     for (const req of CLUSTER_6_REQUIREMENTS) {
-      map[req.id] = findStravaSuggestion(req, cardioSessions)
+      const effectiveTarget = overrides?.[req.id]?.targetValue ?? req.targetValue
+      map[req.id] = findStravaSuggestion({ ...req, targetValue: effectiveTarget }, cardioSessions)
     }
     return map
-  }, [cardioSessions])
+  }, [cardioSessions, overrides])
 
   return (
     <div>
@@ -208,7 +220,13 @@ export function Cluster6Page() {
             <h3 className="mb-3 text-sm font-semibold tracking-wide text-text-secondary uppercase">{CATEGORY_LABEL[category]}</h3>
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
               {items.map((req) => (
-                <RequirementCard key={req.id} req={req} result={isLoading ? undefined : results?.[req.id]} suggestion={suggestions[req.id] ?? null} />
+                <RequirementCard
+                  key={req.id}
+                  req={req}
+                  result={isLoading ? undefined : results?.[req.id]}
+                  suggestion={suggestions[req.id] ?? null}
+                  override={overrides?.[req.id]}
+                />
               ))}
             </div>
           </section>
