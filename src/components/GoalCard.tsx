@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import type { Goal } from '../lib/types/canonical'
 import { Badge, type BadgeTone } from './ui/Badge'
 import { ProgressBar } from './ui/ProgressBar'
-import { compareToSchedule, isDeadlineExpired } from '../lib/goals/goalEngine'
+import { isDeadlineExpired, requiredPaceToDeadline } from '../lib/goals/goalEngine'
 
 const STATUS_LABEL: Record<Goal['status'], string> = {
   on_track: 'Op schema',
@@ -36,38 +36,44 @@ function fmt1(n: number): string {
   return (Math.round(n * 10) / 10).toString().replace('.', ',')
 }
 
+const PACE_NOTE_TEXT_TONE: Record<BadgeTone, string> = {
+  good: 'text-status-good',
+  warn: 'text-status-warn',
+  crit: 'text-status-crit',
+  neutral: 'text-text-primary',
+}
+
 /**
- * Only for priority-1 goals (explicit user request) -- "how far ahead/
- * behind a straight line from start to target am I today", separate
- * from the trend-based forecast/status above. The two can genuinely
- * disagree (see goalEngine.test.ts): early progress can outpace a naive
- * linear schedule while the actual (decelerating) trend still forecasts
- * missing the deadline, so this is labeled as its own comparison rather
- * than folded into the status badge.
+ * Only for priority-1 goals (explicit user request): "what do I need to
+ * do to get back on schedule". Always phrased to match the status badge
+ * above it -- an earlier version compared against a separate naive
+ * straight-line schedule and could flatly contradict the badge (real
+ * case: badge said "Achter" while that comparison said "vóór op schema"
+ * for the same goal at the same moment). This derives from the same
+ * currentValue/targetValue/deadline computeGoalStatus already used, so
+ * the two can't disagree -- just one required pace, framed by status.
  */
 function ScheduleNote({ goal }: { goal: Goal }) {
   if (goal.priority !== 1 || goal.status === 'achieved' || goal.status === 'expired') return null
-  if (goal.startValue == null || goal.currentValue == null || !goal.deadline) return null
+  if (goal.currentValue == null || !goal.deadline) return null
 
-  const result = compareToSchedule({
-    startValue: goal.startValue,
+  const requiredRatePerMonth = requiredPaceToDeadline({
     currentValue: goal.currentValue,
     targetValue: goal.targetValue,
-    startDate: goal.startDate,
     deadline: goal.deadline,
   })
-  if (!result) return null
+  if (requiredRatePerMonth == null) return null
 
-  const ahead = result.delta >= 0
+  const tone = STATUS_TONE[goal.status]
+  const pace = `${fmt1(requiredRatePerMonth)} ${goal.unit}/maand`
+  const text =
+    goal.status === 'on_track'
+      ? `Op schema — blijf minimaal ${pace} aanhouden om de deadline te halen.`
+      : `Nodig: ${pace} vanaf nu om de deadline nog te halen.`
+
   return (
     <div className="mt-3 rounded-md border border-border bg-surface-1 px-3 py-2 text-xs">
-      <span className="font-semibold text-text-primary">
-        {ahead ? `+${fmt1(result.delta)} ${goal.unit} vóór op schema` : `${fmt1(Math.abs(result.delta))} ${goal.unit} achter op schema`}
-      </span>
-      {!ahead && result.requiredRatePerMonth != null && (
-        <span className="text-text-secondary"> — nodig: {fmt1(result.requiredRatePerMonth)} {goal.unit}/maand om de deadline nog te halen.</span>
-      )}
-      <div className="mt-0.5 text-text-muted">T.o.v. een lineair schema van start tot deadline — een andere inschatting dan de trend-forecast hierboven.</div>
+      <span className={`font-semibold ${PACE_NOTE_TEXT_TONE[tone]}`}>{text}</span>
     </div>
   )
 }

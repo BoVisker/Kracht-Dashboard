@@ -132,49 +132,29 @@ function roundToIncrement(value: number, increment: number): number {
   return Math.round(value / increment) * increment
 }
 
-export interface ScheduleComparisonInput {
-  startValue: number
+export interface RequiredPaceInput {
   currentValue: number
   targetValue: number
-  startDate: string
   deadline: string
   asOf?: Date
 }
 
-export interface ScheduleComparison {
-  /** Where a straight line from start to target says you should be today. */
-  expectedValueToday: number
-  /** currentValue - expectedValueToday. Positive = ahead of schedule, negative = behind. */
-  delta: number
-  /** Pace (per 30 days) needed from today to still hit target by the deadline. Null once the deadline has passed or the goal is already achieved. */
-  requiredRatePerMonth: number | null
-}
-
 /**
- * Answers "how much am I ahead/behind schedule right now", not just
- * "will I make the deadline" (that's computeGoalStatus). Needs both a
- * start value and a deadline -- open-ended goals (brief section 12's
- * dips/pull-ups, no fixed deadline) have no "schedule" to compare against,
- * so this returns null rather than inventing one.
+ * "What pace do I need from today to still hit the deadline" -- the
+ * earlier version of this also compared against a naive straight-line
+ * schedule from start to target ("+13.5kg ahead of schedule"), but that
+ * can flatly contradict the trend-based status badge above it (real
+ * case: badge said "Achter" while the linear comparison said "vóór op
+ * schema" for the same goal at the same moment -- confusing, not just
+ * imprecise). This only ever produces one number, phrased to match
+ * whatever computeGoalStatus already decided, so the two can't disagree.
+ * Null once the deadline has passed or the goal is already achieved --
+ * there's nothing left to "need" then. Doesn't require a start_value,
+ * so it works for open-ended goals too, not just ones seeded with one.
  */
-export function compareToSchedule({
-  startValue,
-  currentValue,
-  targetValue,
-  startDate,
-  deadline,
-  asOf = new Date(),
-}: ScheduleComparisonInput): ScheduleComparison | null {
-  const totalDays = (new Date(deadline).getTime() - new Date(startDate).getTime()) / 86_400_000
-  if (totalDays <= 0) return null
-
-  const daysSinceStart = Math.max(0, Math.min(totalDays, (asOf.getTime() - new Date(startDate).getTime()) / 86_400_000))
-  const expectedValueToday = startValue + (targetValue - startValue) * (daysSinceStart / totalDays)
-  const delta = currentValue - expectedValueToday
-
+export function requiredPaceToDeadline({ currentValue, targetValue, deadline, asOf = new Date() }: RequiredPaceInput): number | null {
+  if (currentValue >= targetValue) return null
   const daysRemaining = (new Date(deadline).getTime() - asOf.getTime()) / 86_400_000
-  const alreadyAchieved = currentValue >= targetValue
-  const requiredRatePerMonth = !alreadyAchieved && daysRemaining > 0 ? ((targetValue - currentValue) / daysRemaining) * 30 : null
-
-  return { expectedValueToday, delta, requiredRatePerMonth }
+  if (daysRemaining <= 0) return null
+  return ((targetValue - currentValue) / daysRemaining) * 30
 }
