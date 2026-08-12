@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import type { Goal } from '../lib/types/canonical'
 import { Badge, type BadgeTone } from './ui/Badge'
 import { ProgressBar } from './ui/ProgressBar'
@@ -70,6 +71,12 @@ export function GoalCard({ goal, percent }: { goal: Goal; percent: number | null
         <div className="mt-3 rounded-md border border-status-crit/30 bg-status-crit/10 px-3 py-2 text-xs text-text-primary">
           Deadline expired — confirmation required. Pas de deadline aan in Doelen-instellingen, deze wordt niet automatisch gewijzigd.
         </div>
+      )}
+
+      {goal.exerciseId && (
+        <Link to={`/exercises/${goal.exerciseId}`} className="mt-3 block text-xs font-semibold text-accent-text">
+          Bekijk oefening →
+        </Link>
       )}
     </div>
   )
