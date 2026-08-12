@@ -31,6 +31,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 import { chunk } from '../_shared/chunk.ts'
+import { fitLinearTrend, forecastAchievementDate, type HistoryPoint } from '../_shared/trend.ts'
 
 const HEVY_BASE = 'https://api.hevyapp.com/v1'
 
@@ -300,17 +301,22 @@ async function upsertAllWorkouts(admin: AdminClient, userId: string, workouts: H
 
 /**
  * For every one of the user's goals linked to an exercise (goals.exercise_id),
- * recomputes current_value from the sets actually on record: estimated 1RM
- * (Epley) of the best set in the most recent session that touched that
- * exercise. Generic across any exercise-linked goal, not hardcoded to
- * bench/dips/pull-ups -- goals with no linked exercise are left untouched,
- * and a goal whose exercise has no sets yet keeps current_value at null
- * rather than getting a fabricated number.
+ * recomputes current_value (estimated 1RM of the most recent session's best
+ * set) and forecast_date (linear trend over every session's best set,
+ * extrapolated to the goal's target_value). Generic across any
+ * exercise-linked goal, not hardcoded to bench/dips/pull-ups -- goals with
+ * no linked exercise, or whose exercise has no sets yet, are left with
+ * current_value/forecast_date at null rather than a fabricated number.
+ *
+ * Status itself is NOT written here -- the frontend's useGoals hook
+ * recomputes status/percent reactively from current_value + deadline +
+ * forecast_date on every render (see toGoalWithProgress), so writing it
+ * here would just be a second, easily-stale copy of the same logic.
  */
 async function recomputeGoalProgress(admin: AdminClient, userId: string): Promise<void> {
   const { data: goals, error: goalsError } = await admin
     .from('goals')
-    .select('id, exercise_id')
+    .select('id, exercise_id, target_value')
     .eq('user_id', userId)
     .not('exercise_id', 'is', null)
   if (goalsError || !goals?.length) return
@@ -323,7 +329,7 @@ async function recomputeGoalProgress(admin: AdminClient, userId: string): Promis
   const sessionDateById = new Map((sessions as { id: string; date: string }[]).map((s) => [s.id, s.date]))
   const sessionIds = Array.from(sessionDateById.keys())
 
-  for (const goal of goals as { id: string; exercise_id: string }[]) {
+  for (const goal of goals as { id: string; exercise_id: string; target_value: number }[]) {
     const { data: setsForExercise, error: setsError } = await admin
       .from('sets')
       .select('session_id, weight_kg, reps')
@@ -340,21 +346,24 @@ async function recomputeGoalProgress(admin: AdminClient, userId: string): Promis
       if (e1rm > (bestPerSession.get(s.session_id) ?? -Infinity)) bestPerSession.set(s.session_id, e1rm)
     }
 
-    // ...then the most recent session among those wins as "current".
-    let latestDate = ''
-    let latestE1rm: number | null = null
-    for (const [sessionId, e1rm] of bestPerSession) {
-      const date = sessionDateById.get(sessionId) ?? ''
-      if (date > latestDate) {
-        latestDate = date
-        latestE1rm = e1rm
-      }
-    }
-    if (latestE1rm == null) continue
+    // ...then every session becomes one point in the trend history, sorted chronologically.
+    const history: HistoryPoint[] = Array.from(bestPerSession.entries())
+      .map(([sessionId, e1rm]) => ({ date: new Date(sessionDateById.get(sessionId) ?? 0), value: e1rm }))
+      .filter((p) => p.date.getTime() > 0)
+      .sort((a, b) => a.date.getTime() - b.date.getTime())
+    if (!history.length) continue
+
+    const latest = history[history.length - 1]
+    const trend = fitLinearTrend(history)
+    const forecastDate = trend ? forecastAchievementDate(trend, latest, goal.target_value) : null
 
     await admin
       .from('goals')
-      .update({ current_value: Math.round(latestE1rm * 10) / 10, updated_at: new Date().toISOString() })
+      .update({
+        current_value: Math.round(latest.value * 10) / 10,
+        forecast_date: forecastDate ? forecastDate.toISOString().slice(0, 10) : null,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', goal.id)
   }
 }
