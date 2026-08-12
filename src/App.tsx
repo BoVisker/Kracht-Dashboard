@@ -12,6 +12,7 @@ import { ExercisePage } from './pages/ExercisePage'
 import { ExercisesIndexPage } from './pages/ExercisesIndexPage'
 import { AchievementsPage } from './pages/AchievementsPage'
 import { ReportsPage } from './pages/ReportsPage'
+import { RecoveryPage } from './pages/RecoveryPage'
 import { SyncPage } from './pages/SyncPage'
 import { SettingsPage } from './pages/SettingsPage'
 
@@ -46,6 +47,7 @@ export function App() {
             <Route path="exercises/:id" element={<ExercisePage />} />
             <Route path="achievements" element={<AchievementsPage />} />
             <Route path="reports" element={<ReportsPage />} />
+            <Route path="recovery" element={<RecoveryPage />} />
             <Route path="sync" element={<SyncPage />} />
             <Route path="settings" element={<SettingsPage />} />
           </Route>

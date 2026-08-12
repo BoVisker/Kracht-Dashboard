@@ -128,3 +128,19 @@ export interface PersonalRecord {
   sessionId: string | null
   previousValue: number | null
 }
+
+export type RecoverySource = 'manual' | 'garmin_csv' | 'garmin_export'
+
+/** One row per calendar day -- unlike a PersonalRecord or ClusterTest, a resting heart rate isn't a repeatable "attempt", it's a daily fact. */
+export interface RecoveryMetric {
+  id: string
+  date: string
+  source: RecoverySource
+  restingHeartRate: number | null
+  hrvMs: number | null
+  sleepDurationMinutes: number | null
+  sleepScore: number | null
+  bodyBattery: number | null
+  stressAverage: number | null
+  notes: string | null
+}

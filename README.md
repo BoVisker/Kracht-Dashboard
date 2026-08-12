@@ -85,7 +85,19 @@ Not implemented: Strava webhooks (brief section 7) — sync is polling-only for 
 
 ## Roadmap
 
-Phases 1-9 done and live-verified (see Status above). Remaining, no fixed order: recovery/herstel tracking, weekly/monthly reports, forecasting refinements (e.g. confidence intervals on the trend fit), a Cluster 6 Settings UI to edit requirements (currently a hardcoded seed array, deliberately not hardcoded into logic — see `src/lib/cluster6/requirements.ts`), Strava webhooks (replacing polling), Garmin adapter (blocked — Garmin's individual-developer API access is enterprise-only, confirmed during Phase 1 research), then general testing/perf/security polish.
+Phases 1-11 done and live-verified: the two above, plus a PR achievements feed (Command Center + `/achievements`) and a weekly/monthly report (`/reports`). Remaining: recovery tracking (see below — built without live Garmin sync), forecasting refinements (e.g. confidence intervals on the trend fit), a Cluster 6 Settings UI to edit requirements (currently a hardcoded seed array, deliberately not hardcoded into logic — see `src/lib/cluster6/requirements.ts`), Strava webhooks (replacing polling), then general testing/perf/security polish.
+
+## Garmin research findings (2026-08-12)
+
+Short version: **no live Garmin sync, and not because it wasn't tried.** Garmin has no individual/personal-use developer API (Connect Developer Program requires a company/university/institution — confirmed both during Phase 1 and again here). Every unofficial route runs through the same chokepoint: `garth`, the Python library that reverse-engineers Garmin Connect's mobile-app SSO flow and that GarminDB and virtually every other community tool (`python-garminconnect`, etc.) depend on for login.
+
+That chokepoint broke, twice, in the months before this was written:
+- **28 March 2026**: Garmin changed its SSO flow; `garth`'s maintainer declared it deprecated. New logins stopped working (a session with an already-valid token could keep working until it expires, ~1 year out, but nothing new could authenticate).
+- **~June 2026**: `python-garminconnect` shipped a fix using `curl_cffi` (TLS-fingerprint impersonation of the Android app) — then Garmin tightened Cloudflare's TLS-fingerprinting bot detection and broke that too.
+
+The community's current fallback is fully manual: log in through a browser yourself, open DevTools, and copy a `serviceTicketId` out of a network request by hand. That's not automatable from a stateless Supabase Edge Function — there's no browser, and `curl_cffi`'s TLS spoofing has no Deno equivalent to begin with. Garmin also has an active commercial reason to keep tightening this (a paid "Connect+" tier launched in 2026), so treating any unofficial fix as stable would be a bad bet, not just a hard one.
+
+**What got built instead**, entirely credential-free: Garmin Connect has its own sanctioned export features — a per-metric "Download CSV" button (Health Stats → e.g. Heart Rate) and a full GDPR "Export Your Data" archive (Account Settings) that includes sleep/HRV/stress/body battery as JSON. `/recovery` supports manual daily entry (always reliable) plus a best-effort CSV importer (`src/lib/recovery/parseRecoveryImport.ts`) that matches columns by keyword rather than a fixed schema, since Garmin's export column names aren't documented and weren't independently verified against a real file. If a real export doesn't parse cleanly, that's expected — the importer reports exactly which columns it matched (or didn't) so the mapping can be adjusted against a real sample.
 
 ## Known gaps / honesty notes
 
@@ -94,3 +106,4 @@ Phases 1-9 done and live-verified (see Status above). Remaining, no fixed order:
 - No Settings UI yet to edit Cluster 6 requirements — those are a hardcoded (but centralized, non-logic-embedded) seed array. Goals themselves are fully editable in Settings.
 - Strava webhooks aren't implemented — sync is polling-only (click "Sync now"), same scope boundary as Hevy.
 - Push/Pull/Legs and Heavy/Volume session classification is a keyword heuristic on the Hevy workout title only — roughly 40% of this user's real session titles are Hevy's generic defaults with no recognizable pattern, and those honestly stay unclassified rather than guessed.
+- The recovery CSV importer's column-matching (`src/lib/recovery/parseRecoveryImport.ts`) is untested against a real Garmin Connect export file — Garmin doesn't publish the column schema, and none was available while building this. It's unit-tested against the author's best guess at realistic headers, and the import UI reports exactly which columns it matched so a mismatch is visible rather than silently wrong; if a real export doesn't parse, the parser needs adjusting against the real header row.

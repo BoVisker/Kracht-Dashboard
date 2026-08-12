@@ -10,6 +10,7 @@ const NAV_ITEMS = [
   { to: '/exercises', label: 'Exercises' },
   { to: '/achievements', label: 'Achievements' },
   { to: '/reports', label: 'Rapportage' },
+  { to: '/recovery', label: 'Herstel' },
   { to: '/cluster-6', label: 'Cluster 6' },
   { to: '/sync', label: 'Sync' },
   { to: '/settings', label: 'Settings' },
