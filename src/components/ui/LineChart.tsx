@@ -122,18 +122,28 @@ export function LineChart({ title, targetSeries = [], actualSeries, yDomain, xAx
         })}
       </svg>
 
-      {activePoint && (
-        <div
-          className="pointer-events-none absolute z-10 rounded-md bg-text-primary px-2.5 py-1.5 text-xs whitespace-nowrap text-card-bg"
-          style={{
-            left: `${(activePoint.cx / svgWidth) * 100}%`,
-            top: `${(activePoint.cy / svgHeight) * 100}%`,
-            transform: 'translate(12px, -100%)',
-          }}
-        >
-          {activePoint.point.label}
-        </div>
-      )}
+      {activePoint && (() => {
+        // A fixed "grow right, grow up" tooltip runs off both phone and
+        // desktop screens once a point sits near the chart's edge --
+        // confirmed live on points near the end of a long series. Flip
+        // the anchor toward the side with more room instead.
+        const nearRightEdge = activePoint.cx > svgWidth * 0.6
+        const nearTopEdge = activePoint.cy < svgHeight * 0.2
+        const xOffset = nearRightEdge ? 'calc(-100% - 12px)' : '12px'
+        const yOffset = nearTopEdge ? '12px' : '-100%'
+        return (
+          <div
+            className="pointer-events-none absolute z-10 rounded-md bg-text-primary px-2.5 py-1.5 text-xs whitespace-nowrap text-card-bg"
+            style={{
+              left: `${(activePoint.cx / svgWidth) * 100}%`,
+              top: `${(activePoint.cy / svgHeight) * 100}%`,
+              transform: `translate(${xOffset}, ${yOffset})`,
+            }}
+          >
+            {activePoint.point.label}
+          </div>
+        )
+      })()}
 
       {actualSeries.length > 0 && (
         <details className="mt-2.5">
