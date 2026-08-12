@@ -14,6 +14,8 @@ export interface LinearTrend {
   slopePerDay: number
   intercept: number
   n: number
+  /** Coefficient of determination -- how much of the variance the line actually explains, not just how many points went in. */
+  rSquared: number
 }
 
 /** Needs >=3 points spanning >=7 days -- fewer than that is noise, not a trend. */
@@ -35,7 +37,21 @@ export function fitLinearTrend(history: HistoryPoint[]): LinearTrend | null {
   if (denom === 0) return null
   const slopePerDay = (n * sumXY - sumX * sumY) / denom
   const intercept = (sumY - slopePerDay * sumX) / n
-  return { slopePerDay, intercept, n }
+
+  const meanY = sumY / n
+  const ssRes = ys.reduce((acc, y, i) => acc + (y - (intercept + slopePerDay * xs[i])) ** 2, 0)
+  const ssTot = ys.reduce((acc, y) => acc + (y - meanY) ** 2, 0)
+  const rSquared = ssTot === 0 ? 1 : 1 - ssRes / ssTot
+
+  return { slopePerDay, intercept, n, rSquared }
+}
+
+/** Mirrors src/lib/goals/goalEngine.ts's trendConfidence -- see that file for the reasoning behind the thresholds. */
+export function trendConfidence(trend: LinearTrend | null): 'low' | 'medium' | 'high' | null {
+  if (!trend) return null
+  if (trend.n >= 8 && trend.rSquared >= 0.5) return 'high'
+  if (trend.n >= 5 && trend.rSquared >= 0.3) return 'medium'
+  return 'low'
 }
 
 /** Null when the trend is flat/moving away from target -- never invent a date for a goal that isn't progressing. */

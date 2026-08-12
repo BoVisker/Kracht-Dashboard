@@ -36,6 +36,12 @@ function fmt1(n: number): string {
   return (Math.round(n * 10) / 10).toString().replace('.', ',')
 }
 
+const CONFIDENCE_LABEL: Record<NonNullable<Goal['confidence']>, string> = {
+  low: 'ruwe schatting',
+  medium: 'indicatie',
+  high: 'betrouwbaar',
+}
+
 const PACE_NOTE_TEXT_TONE: Record<BadgeTone, string> = {
   good: 'text-status-good',
   warn: 'text-status-warn',
@@ -109,7 +115,10 @@ export function GoalCard({ goal, percent }: { goal: Goal; percent: number | null
         </div>
         <div>
           <div className="text-xs text-text-muted">Forecast</div>
-          <div className="text-text-primary">{goal.forecastDate ? formatDate(goal.forecastDate) : 'Insufficient data'}</div>
+          <div className="text-text-primary">
+            {goal.forecastDate ? formatDate(goal.forecastDate) : 'Insufficient data'}
+            {goal.forecastDate && goal.confidence && <span className="ml-1 text-xs text-text-muted">({CONFIDENCE_LABEL[goal.confidence]})</span>}
+          </div>
         </div>
       </div>
 

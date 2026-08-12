@@ -55,11 +55,33 @@ describe('fitLinearTrend', () => {
     expect(trend).not.toBeNull()
     expect(trend!.slopePerDay).toBeGreaterThan(0)
   })
+
+  it('computes a near-1 R² for points that fall exactly on a line', () => {
+    const history: HistoryPoint[] = [
+      { date: new Date('2026-01-01'), value: 80 },
+      { date: new Date('2026-01-08'), value: 82 },
+      { date: new Date('2026-01-15'), value: 84 },
+      { date: new Date('2026-01-22'), value: 86 },
+    ]
+    const trend = fitLinearTrend(history)
+    expect(trend!.rSquared).toBeGreaterThan(0.99)
+  })
+
+  it('computes a low R² for values that bounce around rather than trending', () => {
+    const history: HistoryPoint[] = [
+      { date: new Date('2026-01-01'), value: 80 },
+      { date: new Date('2026-01-08'), value: 95 },
+      { date: new Date('2026-01-15'), value: 78 },
+      { date: new Date('2026-01-22'), value: 92 },
+    ]
+    const trend = fitLinearTrend(history)
+    expect(trend!.rSquared).toBeLessThan(0.5)
+  })
 })
 
 describe('forecastAchievementDate', () => {
   it('projects forward when trending toward the target', () => {
-    const trend = { slopePerDay: 0.1, intercept: 0, n: 5 }
+    const trend = { slopePerDay: 0.1, intercept: 0, n: 5, rSquared: 0.9 }
     const latest: HistoryPoint = { date: new Date('2026-08-01'), value: 90 }
     const forecast = forecastAchievementDate(trend, latest, 100)
     expect(forecast).not.toBeNull()
@@ -67,13 +89,13 @@ describe('forecastAchievementDate', () => {
   })
 
   it('returns null when the trend is moving away from the target', () => {
-    const trend = { slopePerDay: -0.1, intercept: 0, n: 5 }
+    const trend = { slopePerDay: -0.1, intercept: 0, n: 5, rSquared: 0.9 }
     const latest: HistoryPoint = { date: new Date('2026-08-01'), value: 90 }
     expect(forecastAchievementDate(trend, latest, 100)).toBeNull()
   })
 
   it('returns null for a completely flat trend', () => {
-    const trend = { slopePerDay: 0, intercept: 0, n: 5 }
+    const trend = { slopePerDay: 0, intercept: 0, n: 5, rSquared: 0 }
     const latest: HistoryPoint = { date: new Date('2026-08-01'), value: 90 }
     expect(forecastAchievementDate(trend, latest, 100)).toBeNull()
   })
@@ -156,7 +178,7 @@ describe('suggestNextTarget', () => {
   })
 
   it('scales the next target to recent pace, rounded to the load increment', () => {
-    const trend = { slopePerDay: 0.05, intercept: 0, n: 8 } // 1.5kg/month
+    const trend = { slopePerDay: 0.05, intercept: 0, n: 8, rSquared: 0.9 } // 1.5kg/month
     const next = suggestNextTarget(100, trend, 2.5)
     expect(next).toBeGreaterThan(100)
     expect(next % 2.5).toBeCloseTo(0, 5)
@@ -168,10 +190,15 @@ describe('trendConfidence', () => {
     expect(trendConfidence(null)).toBeNull()
   })
 
-  it('scales confidence with sample size', () => {
-    expect(trendConfidence({ slopePerDay: 0.1, intercept: 0, n: 3 })).toBe('low')
-    expect(trendConfidence({ slopePerDay: 0.1, intercept: 0, n: 5 })).toBe('medium')
-    expect(trendConfidence({ slopePerDay: 0.1, intercept: 0, n: 9 })).toBe('high')
+  it('scales confidence with sample size, given a reasonably tight fit', () => {
+    expect(trendConfidence({ slopePerDay: 0.1, intercept: 0, n: 3, rSquared: 0.9 })).toBe('low')
+    expect(trendConfidence({ slopePerDay: 0.1, intercept: 0, n: 5, rSquared: 0.9 })).toBe('medium')
+    expect(trendConfidence({ slopePerDay: 0.1, intercept: 0, n: 9, rSquared: 0.9 })).toBe('high')
+  })
+
+  it('does not report high or medium confidence from point count alone when the fit is poor -- lots of scattered points is not the same as a real trend', () => {
+    expect(trendConfidence({ slopePerDay: 0.1, intercept: 0, n: 20, rSquared: 0.1 })).toBe('low')
+    expect(trendConfidence({ slopePerDay: 0.1, intercept: 0, n: 20, rSquared: 0.25 })).toBe('low')
   })
 })
 

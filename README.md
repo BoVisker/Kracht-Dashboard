@@ -85,7 +85,7 @@ Not implemented: Strava webhooks (brief section 7) — sync is polling-only for 
 
 ## Roadmap
 
-Phases 1-11 done and live-verified: the two above, plus a PR achievements feed (Command Center + `/achievements`) and a weekly/monthly report (`/reports`). Remaining: recovery tracking (see below — built without live Garmin sync), forecasting refinements (e.g. confidence intervals on the trend fit), a Cluster 6 Settings UI to edit requirements (currently a hardcoded seed array, deliberately not hardcoded into logic — see `src/lib/cluster6/requirements.ts`), Strava webhooks (replacing polling), then general testing/perf/security polish.
+Phases 1-11 done and live-verified: the two above, plus a PR achievements feed (Command Center + `/achievements`) and a weekly/monthly report (`/reports`). Also done: recovery tracking (see below — built without live Garmin sync); a Cluster 6 Settings UI to edit requirement targets/buffer margins per user (`cluster_requirement_overrides`, wired into `Cluster6Page`); and a forecasting refinement — `fitLinearTrend` now computes R² alongside the slope, and `trendConfidence` requires both enough points *and* a reasonably tight fit before calling a forecast "betrouwbaar" (many scattered points no longer counts as high confidence on its own). `recomputeGoalProgress` writes this to `goals.confidence` on every sync; `GoalCard` shows it next to the forecast date. Remaining: Strava webhooks (replacing polling), then general testing/perf/security polish.
 
 ## Garmin research findings (2026-08-12)
 

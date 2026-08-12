@@ -11,6 +11,8 @@ export interface LinearTrend {
   intercept: number
   /** Number of points the trend was fit on — carry this through to confidence. */
   n: number
+  /** Coefficient of determination (0-1): how much of the variance in the data the line actually explains. Point count alone can't tell a clean trend from noise; this can. */
+  rSquared: number
 }
 
 /** Percent of the way from start to target. Null when start/target data is missing — never 0% by default. */
@@ -46,7 +48,14 @@ export function fitLinearTrend(history: HistoryPoint[]): LinearTrend | null {
   if (denom === 0) return null
   const slopePerDay = (n * sumXY - sumX * sumY) / denom
   const intercept = (sumY - slopePerDay * sumX) / n
-  return { slopePerDay, intercept, n }
+
+  const meanY = sumY / n
+  const ssRes = ys.reduce((acc, y, i) => acc + (y - (intercept + slopePerDay * xs[i])) ** 2, 0)
+  const ssTot = ys.reduce((acc, y) => acc + (y - meanY) ** 2, 0)
+  // ssTot is 0 only when every value is identical, in which case the fit is exact by construction.
+  const rSquared = ssTot === 0 ? 1 : 1 - ssRes / ssTot
+
+  return { slopePerDay, intercept, n, rSquared }
 }
 
 /**
@@ -70,11 +79,21 @@ export function forecastAchievementDate(
   return new Date(ms)
 }
 
-/** More history over a longer span = more trustworthy trend. A blunt but honest heuristic, not a statistical guarantee. */
+/**
+ * Needs both enough points AND a reasonably tight fit (R²) -- point count
+ * alone can't distinguish a clean trend from noise. 20 wildly scattered
+ * data points aren't more trustworthy than 3 clean ones just because
+ * there are more of them; a forecast built on a low-R² trend is a
+ * coin-flip wearing a specific date, not a real prediction. Thresholds
+ * (0.3/0.5) are a deliberately conservative, documented judgment call,
+ * not a statistical standard -- real training data is noisy by nature
+ * (daily fatigue, sleep, load selection), so demanding textbook-tight
+ * fits would make every trend "low" and the label useless.
+ */
 export function trendConfidence(trend: LinearTrend | null): 'low' | 'medium' | 'high' | null {
   if (!trend) return null
-  if (trend.n >= 8) return 'high'
-  if (trend.n >= 5) return 'medium'
+  if (trend.n >= 8 && trend.rSquared >= 0.5) return 'high'
+  if (trend.n >= 5 && trend.rSquared >= 0.3) return 'medium'
   return 'low'
 }
 

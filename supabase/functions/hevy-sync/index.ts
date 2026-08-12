@@ -31,7 +31,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
 import { chunk } from '../_shared/chunk.ts'
-import { fitLinearTrend, forecastAchievementDate, type HistoryPoint } from '../_shared/trend.ts'
+import { fitLinearTrend, forecastAchievementDate, trendConfidence, type HistoryPoint } from '../_shared/trend.ts'
 
 const HEVY_BASE = 'https://api.hevyapp.com/v1'
 
@@ -362,6 +362,7 @@ async function recomputeGoalProgress(admin: AdminClient, userId: string): Promis
       .update({
         current_value: Math.round(latest.value * 10) / 10,
         forecast_date: forecastDate ? forecastDate.toISOString().slice(0, 10) : null,
+        confidence: trendConfidence(trend),
         updated_at: new Date().toISOString(),
       })
       .eq('id', goal.id)
