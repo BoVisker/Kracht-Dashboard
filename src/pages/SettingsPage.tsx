@@ -19,8 +19,10 @@ export function SettingsPage() {
         <Card title="Doelen" subtitle="Deadlines, targets en prioriteit per doel bewerken of nieuwe doelen toevoegen." className="md:col-span-2">
           {isSupabaseConfigured() ? <GoalsManager /> : <p className="text-sm text-text-muted">Vereist een gekoppeld Supabase-project — zie README.md.</p>}
         </Card>
-        <Card title="Trainingsplan" subtitle="Push/Pull/Legs-schema en heavy/volume-indeling.">
-          <p className="text-sm text-text-muted">Nog te bouwen — komt met Trainingsplan-analyse (fase 9).</p>
+        <Card title="Trainingsplan" subtitle="Van tevoren een weekschema plannen (welke dag push/pull/legs) en sessies daaraan koppelen.">
+          <p className="text-sm text-text-muted">
+            Nog te bouwen. De classificatie zelf (Push/Pull/Legs + Heavy/Volume, afgeleid uit je Hevy-titels) werkt al — zie de Training-pagina. Dit zou een losstaande planning-editor zijn, geen kleine aanvulling daarop.
+          </p>
         </Card>
         <Card title="Cluster 6 configuratie" subtitle="Target-waarden en buffer-marges per vereiste aanpassen, zonder redeploy." className="md:col-span-2">
           {isSupabaseConfigured() ? <ClusterRequirementsManager /> : <p className="text-sm text-text-muted">Vereist een gekoppeld Supabase-project — zie README.md.</p>}
