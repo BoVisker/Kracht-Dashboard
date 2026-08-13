@@ -1,20 +1,28 @@
+import { lazy } from 'react'
 import { HashRouter, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './lib/auth/AuthContext'
 import { ProtectedRoute } from './components/layout/ProtectedRoute'
 import { AppShell } from './components/layout/AppShell'
 import { LoginPage } from './pages/LoginPage'
-import { DashboardPage } from './pages/DashboardPage'
-import { GoalsPage } from './pages/GoalsPage'
-import { TrainingPage } from './pages/TrainingPage'
-import { CardioPage } from './pages/CardioPage'
-import { Cluster6Page } from './pages/Cluster6Page'
-import { ExercisePage } from './pages/ExercisePage'
-import { ExercisesIndexPage } from './pages/ExercisesIndexPage'
-import { AchievementsPage } from './pages/AchievementsPage'
-import { ReportsPage } from './pages/ReportsPage'
-import { RecoveryPage } from './pages/RecoveryPage'
-import { SyncPage } from './pages/SyncPage'
-import { SettingsPage } from './pages/SettingsPage'
+
+// Lazy-loaded: these only matter post-login, and there are 12 of them --
+// bundling all of them into the initial chunk (563kB before this change)
+// makes every visitor download every page's code before seeing anything.
+// LoginPage stays eager: it's the very first paint for a signed-out
+// visitor, and small enough that splitting it out would just add a round
+// trip for no benefit.
+const DashboardPage = lazy(() => import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })))
+const GoalsPage = lazy(() => import('./pages/GoalsPage').then((m) => ({ default: m.GoalsPage })))
+const TrainingPage = lazy(() => import('./pages/TrainingPage').then((m) => ({ default: m.TrainingPage })))
+const CardioPage = lazy(() => import('./pages/CardioPage').then((m) => ({ default: m.CardioPage })))
+const Cluster6Page = lazy(() => import('./pages/Cluster6Page').then((m) => ({ default: m.Cluster6Page })))
+const ExercisePage = lazy(() => import('./pages/ExercisePage').then((m) => ({ default: m.ExercisePage })))
+const ExercisesIndexPage = lazy(() => import('./pages/ExercisesIndexPage').then((m) => ({ default: m.ExercisesIndexPage })))
+const AchievementsPage = lazy(() => import('./pages/AchievementsPage').then((m) => ({ default: m.AchievementsPage })))
+const ReportsPage = lazy(() => import('./pages/ReportsPage').then((m) => ({ default: m.ReportsPage })))
+const RecoveryPage = lazy(() => import('./pages/RecoveryPage').then((m) => ({ default: m.RecoveryPage })))
+const SyncPage = lazy(() => import('./pages/SyncPage').then((m) => ({ default: m.SyncPage })))
+const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })))
 
 /**
  * HashRouter, not BrowserRouter: GitHub Pages serves static files with no

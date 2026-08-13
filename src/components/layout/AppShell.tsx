@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../../lib/auth/useAuth'
 import { StravaCallbackHandler } from '../StravaCallbackHandler'
@@ -58,7 +59,9 @@ export function AppShell() {
       </header>
       <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
         <StravaCallbackHandler />
-        <Outlet />
+        <Suspense fallback={<div className="text-sm text-text-muted">Laden…</div>}>
+          <Outlet />
+        </Suspense>
       </main>
     </div>
   )

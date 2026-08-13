@@ -1,7 +1,12 @@
-// The only way a provider secret (Hevy API key today; Strava tokens once
-// that OAuth flow is built) gets into provider_tokens. That table has no
-// RLS policies for anon/authenticated (see migration 0001) -- writing to
-// it requires service_role, which only this function holds.
+// The path for a manually-entered provider secret (currently just Hevy's
+// API key) to get into provider_tokens. That table has no RLS policies for
+// anon/authenticated (see migration 0001) -- writing to it requires
+// service_role, which only this function holds. Strava's tokens take a
+// different path (strava-exchange-token, since OAuth's authorization-code
+// exchange needs the client secret too, not just a plain upsert), and
+// Garmin has no real integration to write tokens for at all -- see
+// README.md "Garmin research findings". `provider` still accepts all three
+// so this stays a general-purpose write path if that ever changes.
 //
 // The frontend calls this once, when the user pastes their Hevy API key
 // into Settings/Sync. The key itself still passes through the browser at
