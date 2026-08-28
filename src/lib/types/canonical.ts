@@ -25,6 +25,19 @@ export interface TrainingSession {
   notes: string | null
 }
 
+export type DayOfWeek = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday'
+
+/** One slot in the repeating weekly template -- not tied to a calendar date. See migration 0006. */
+export interface PlannedSession {
+  id: string
+  dayOfWeek: DayOfWeek
+  sortOrder: number
+  trainingType: 'push' | 'pull' | 'legs' | 'cardio' | 'rest' | 'other'
+  trainingSubtype: 'heavy' | 'volume' | null
+  label: string
+  notes: string | null
+}
+
 export type MovementPattern =
   | 'horizontal_push'
   | 'vertical_push'

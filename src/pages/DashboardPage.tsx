@@ -10,9 +10,22 @@ import { useTrainingSessions } from '../hooks/useTrainingSessions'
 import { useCardioSessions } from '../hooks/useCardioSessions'
 import { useClusterTestResults } from '../hooks/useClusterTests'
 import { useClusterRequirementOverrides } from '../hooks/useClusterRequirementOverrides'
+import { usePlannedSessions } from '../hooks/usePlannedSessions'
 import { CLUSTER_6_REQUIREMENTS } from '../lib/cluster6/requirements'
 import { classifyClusterResult, DEFAULT_BUFFER_CONFIG, type ClusterBufferConfig } from '../lib/cluster6/classify'
 import { isSupabaseConfigured } from '../lib/supabase'
+import type { DayOfWeek } from '../lib/types/canonical'
+
+const JS_DAY_TO_DAY_OF_WEEK: DayOfWeek[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+
+const TRAINING_TYPE_LABELS: Record<string, string> = {
+  push: 'Push',
+  pull: 'Pull',
+  legs: 'Legs',
+  cardio: 'Cardio',
+  rest: 'Rust',
+  other: 'Overig',
+}
 
 function formatDate(d: Date): string {
   return d.toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -47,6 +60,12 @@ export function DashboardPage() {
   const { data: cardioSessions, isLoading: cardioLoading } = useCardioSessions()
   const { data: clusterResults, isLoading: clusterLoading } = useClusterTestResults()
   const { data: clusterOverrides } = useClusterRequirementOverrides()
+  const { data: plannedSessions, isLoading: plannedLoading } = usePlannedSessions()
+
+  const todaysPlan = useMemo(() => {
+    const today = JS_DAY_TO_DAY_OF_WEEK[new Date().getDay()]
+    return (plannedSessions ?? []).filter((s) => s.dayOfWeek === today)
+  }, [plannedSessions])
 
   const topGoals = goals?.slice(0, 3) ?? []
   const recentAchievements = achievements?.slice(0, 3) ?? []
@@ -104,7 +123,27 @@ export function DashboardPage() {
       <section>
         <h2 className="mb-3 text-sm font-semibold tracking-wide text-text-secondary uppercase">Today</h2>
         <Card>
-          <InsufficientData label="Geen trainingsplan-koppeling actief — te configureren in Settings." />
+          {plannedLoading ? (
+            <InsufficientData label="Laden…" />
+          ) : todaysPlan.length === 0 ? (
+            <InsufficientData label="Geen sessie gepland voor vandaag — te bewerken in Settings." />
+          ) : (
+            <div className="flex flex-col divide-y divide-gridline">
+              {todaysPlan.map((s) => (
+                <div key={s.id} className="flex items-center justify-between gap-2 py-2 text-sm">
+                  <span className="font-semibold text-text-primary">{s.label}</span>
+                  <span className="text-text-muted">
+                    {TRAINING_TYPE_LABELS[s.trainingType]}
+                    {s.trainingSubtype ? ` (${s.trainingSubtype})` : ''}
+                    {s.notes ? ` · ${s.notes}` : ''}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          <Link to="/settings" className="mt-2 block text-sm font-semibold text-accent-text">
+            Trainingsplan bewerken →
+          </Link>
         </Card>
       </section>
 

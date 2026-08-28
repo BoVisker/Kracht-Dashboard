@@ -2,9 +2,12 @@
  * Seed data, not business logic — this is exactly what brief section 22/23
  * asks for: Defensie can change these numbers without a code change.
  *
- * Sourced from fitvoordefensie.nl/marinier-worden/ (third-party, not the
- * werkenbijdefensie.nl domain itself — that page 404'd when checked).
- * VERIFY against the official source before treating these as authoritative;
+ * Re-verified 2026-08-28 directly against werkenbijdefensie.nl (not the
+ * fitvoordefensie.nl third-party mirror used at the 2026-08-11 pass, which
+ * couldn't reach the official domain). Two official pages independently
+ * confirm the same figures: werkenbijdefensie.nl/korps-mariniers (Fitheidstest
+ * + Cluster 6 functional test breakdown) and werkenbijdefensie.nl/training/10
+ * (Cluster 6 keuringsfit programme, confirms the 12-minutenloop figure).
  * `sourceVerifiedAt` records when they were last checked, and the Settings
  * page should let these be edited without redeploying the app.
  */
@@ -25,8 +28,8 @@ export interface ClusterRequirement {
   sourceVerifiedAt: string
 }
 
-const SOURCE = 'fitvoordefensie.nl/marinier-worden/ (ongeverifieerd t.o.v. werkenbijdefensie.nl)'
-const VERIFIED = '2026-08-11'
+const SOURCE = 'werkenbijdefensie.nl/korps-mariniers'
+const VERIFIED = '2026-08-28'
 
 export const CLUSTER_6_REQUIREMENTS: ClusterRequirement[] = [
   {
