@@ -18,15 +18,23 @@
 // nearly 2000 sequential queries and the sync never finished inside
 // the Edge Function's execution window. Confirmed live before the fix.
 //
-// IMPORTANT -- verify before relying on it: the exact JSON shape of
-// GET /v1/workouts/events (used for incremental sync) was not directly
-// observable from Hevy's Swagger UI (it doesn't serve to non-browser
-// fetchers) -- the endpoint's existence and purpose ("Retrieve paged
-// workout events (updates/deletes) since a given date") is confirmed
-// from their published OpenAPI spec, but the response field names are a
-// best-effort guess and MUST be checked against a real response before
-// being trusted to catch deletions correctly. Full-refresh sync
-// (fetchAllWorkouts) does not depend on this and is safe to use today.
+// Incremental sync via GET /v1/workouts/events: the exact response shape
+// (page/page_count/events[], each event {type:'updated', workout} or
+// {type:'deleted', id, deleted_at}) is taken from Hevy's own published
+// OpenAPI spec (github.com/chrisdoc/hevy-mcp, openapi-spec.json) -- this
+// is the schema Hevy documents, not a guess, but it has still never been
+// checked against a real live response from this account, since no Hevy
+// Pro key was available while writing this. That's why every incremental
+// attempt is wrapped to fall back to the full refresh (fetchAllWorkouts)
+// on ANY error or unexpected shape -- see runSync below. Full refresh
+// alone was already correct, just not incremental; this only adds a
+// faster path on top, never replaces the safe one.
+//
+// Deletions: full refresh never removed a training_sessions row for a
+// workout deleted on Hevy's side -- it only upserts, so a deleted-in-Hevy
+// workout stayed forever. Incremental sync's 'deleted' events are the
+// only place that gap is closed; full refresh still won't catch a
+// deletion that happened before the last incremental sync ever ran.
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { corsHeaders } from '../_shared/cors.ts'
@@ -58,6 +66,13 @@ interface HevyWorkout {
   end_time?: string
   created_at?: string
   exercises?: HevyExercise[]
+}
+
+interface HevyWorkoutEvent {
+  type: 'updated' | 'deleted'
+  workout?: HevyWorkout
+  id?: string
+  deleted_at?: string
 }
 
 const SET_TYPE_MAP: Record<string, string> = {
@@ -111,6 +126,14 @@ Deno.serve(async (req) => {
       return json({ error: 'Geen Hevy API-sleutel opgeslagen voor deze gebruiker. Voeg deze toe via Settings.' }, 400)
     }
 
+    const { data: integrationRow } = await admin
+      .from('integrations')
+      .select('last_sync_at')
+      .eq('user_id', userId)
+      .eq('provider', 'hevy')
+      .maybeSingle()
+    const lastSyncAt = (integrationRow as { last_sync_at: string | null } | null)?.last_sync_at ?? null
+
     const syncStart = new Date().toISOString()
     const { data: syncRun } = await admin
       .from('sync_runs')
@@ -121,11 +144,33 @@ Deno.serve(async (req) => {
     const errors: string[] = []
     let fetched = 0
     let upserted = 0
+    let deletedCount = 0
+    let mode: 'full' | 'incremental' = 'full'
 
     try {
-      const workouts = await fetchAllWorkouts(hevyApiKey)
-      fetched = workouts.length
-      upserted = await upsertAllWorkouts(admin, userId, workouts)
+      if (lastSyncAt) {
+        try {
+          const { updated, deletedIds } = await fetchWorkoutEvents(hevyApiKey, lastSyncAt)
+          fetched = updated.length
+          upserted = await upsertAllWorkouts(admin, userId, updated)
+          deletedCount = await deleteWorkoutsByExternalIds(admin, userId, deletedIds)
+          mode = 'incremental'
+        } catch (incrementalErr) {
+          // See file header: never trust the incremental path alone --
+          // any failure (network, unexpected shape, Hevy API error) falls
+          // back to the full refresh that was already known-correct.
+          console.error('Incremental Hevy sync failed, falling back to full refresh:', incrementalErr)
+          const workouts = await fetchAllWorkouts(hevyApiKey)
+          fetched = workouts.length
+          upserted = await upsertAllWorkouts(admin, userId, workouts)
+          deletedCount = 0
+          mode = 'full'
+        }
+      } else {
+        const workouts = await fetchAllWorkouts(hevyApiKey)
+        fetched = workouts.length
+        upserted = await upsertAllWorkouts(admin, userId, workouts)
+      }
       await recomputeGoalProgress(admin, userId)
 
       await admin
@@ -151,11 +196,12 @@ Deno.serve(async (req) => {
         finished_at: new Date().toISOString(),
         records_fetched: fetched,
         records_upserted: upserted,
+        records_deleted: deletedCount,
         errors,
       })
       .eq('id', syncRun?.id)
 
-    return json({ fetched, upserted, errors })
+    return json({ fetched, upserted, deleted: deletedCount, mode, errors })
   } catch (err) {
     console.error(err)
     return json({ error: err instanceof Error ? err.message : 'Unknown error' }, 500)
@@ -183,6 +229,58 @@ async function fetchAllWorkouts(apiKey: string): Promise<HevyWorkout[]> {
     if (workouts.length < pageSize) break
   }
   return all
+}
+
+/**
+ * Incremental alternative to fetchAllWorkouts: GET /v1/workouts/events,
+ * paginated (page/pageSize, max pageSize 10 per Hevy's spec) and filtered
+ * by `since`. Response shape per Hevy's published OpenAPI spec:
+ * `{ page, page_count, events: [{type:'updated', workout} | {type:'deleted', id, deleted_at}] }`,
+ * newest-to-oldest. `page_count` from the first response drives how many
+ * pages to walk -- see file header for why every caller of this wraps it
+ * in a fallback to fetchAllWorkouts.
+ */
+async function fetchWorkoutEvents(apiKey: string, since: string): Promise<{ updated: HevyWorkout[]; deletedIds: string[] }> {
+  const updated: HevyWorkout[] = []
+  const deletedIds: string[] = []
+  const pageSize = 10
+  let pageCount = 1
+  for (let page = 1; page <= pageCount; page++) {
+    const res = await fetch(`${HEVY_BASE}/workouts/events?page=${page}&pageSize=${pageSize}&since=${encodeURIComponent(since)}`, {
+      headers: { 'api-key': apiKey, Accept: 'application/json' },
+    })
+    if (res.status === 404) break // no events since `since` at all
+    if (!res.ok) throw new Error(`Hevy events API HTTP ${res.status} on page ${page}`)
+    const data = await res.json()
+    if (typeof data.page_count !== 'number' || !Array.isArray(data.events)) {
+      throw new Error('Unexpected /v1/workouts/events response shape')
+    }
+    pageCount = data.page_count
+    for (const event of data.events as HevyWorkoutEvent[]) {
+      if (event.type === 'updated' && event.workout) updated.push(event.workout)
+      else if (event.type === 'deleted' && event.id) deletedIds.push(event.id)
+    }
+    if (page >= pageCount) break
+  }
+  return { updated, deletedIds }
+}
+
+/** Full refresh never removed a row for a workout deleted on Hevy's side -- this is the incremental-only fix for that, see file header. */
+async function deleteWorkoutsByExternalIds(admin: AdminClient, userId: string, externalIds: string[]): Promise<number> {
+  if (!externalIds.length) return 0
+  let deletedCount = 0
+  for (const idBatch of chunk(externalIds, 200)) {
+    const { data, error } = await admin
+      .from('training_sessions')
+      .delete()
+      .eq('user_id', userId)
+      .eq('source', 'hevy')
+      .in('external_id', idBatch)
+      .select('id')
+    if (error) throw new Error(`Failed to delete removed workouts: ${error.message}`)
+    deletedCount += data?.length ?? 0
+  }
+  return deletedCount
 }
 
 /**
