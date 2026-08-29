@@ -25,6 +25,10 @@ export async function saveProviderToken(input: SaveProviderTokenInput): Promise<
 export interface SyncResult {
   fetched?: number
   upserted?: number
+  /** Hevy only: rows removed because the workout was deleted on Hevy's side (only caught by incremental sync, see hevy-sync/index.ts). */
+  deleted?: number
+  /** Hevy only: which path this run actually took -- 'incremental' can silently fall back to 'full' on the server if the events endpoint misbehaves. */
+  mode?: 'full' | 'incremental'
   errors?: string[]
   error?: string
 }

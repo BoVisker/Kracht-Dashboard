@@ -51,7 +51,12 @@ export function SyncPage() {
       setSyncMessage(`Fout: ${result.error}`)
     } else {
       const noun = provider.id === 'hevy' ? 'sets' : 'cardio-sessies'
-      setSyncMessage(`${result.upserted ?? 0} ${noun} bijgewerkt uit ${result.fetched ?? 0} ${provider.id === 'hevy' ? 'workouts' : 'activiteiten'}.`)
+      let message = `${result.upserted ?? 0} ${noun} bijgewerkt uit ${result.fetched ?? 0} ${provider.id === 'hevy' ? 'workouts' : 'activiteiten'}.`
+      if (provider.id === 'hevy') {
+        if (result.deleted) message += ` ${result.deleted} verwijderde workout(s) opgeruimd.`
+        if (result.mode) message += ` (${result.mode === 'incremental' ? 'incrementeel' : 'volledige refresh'})`
+      }
+      setSyncMessage(message)
     }
     invalidateIntegrations()
   }
